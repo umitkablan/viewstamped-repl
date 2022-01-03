@@ -27,6 +27,8 @@ public:
     DoViewCh,
     StartView,
     Prepare,
+    StartViewResponse,
+    PrepareResponse,
   };
 
   FakeTMsgBuggyNetwork(std::function<int(int, int, TstMsgType, int)> decFun, bool shuffle = false)
@@ -111,15 +113,13 @@ public:
   {
     enqueueTask(pts_, [from, to, sv, this]() {
       auto ret = callDecideSync(from, to, TstMsgType::StartView, sv.view);
-      MsgStartViewResponse svr{ "failxd-13 network" };
+      MsgStartViewResponse svr{ sv.view, "failxd-13 network" };
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
         svr = engines_[to]->ConsumeMsg(from, sv);
-      } else
-        return ret;
-
-      std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
-      return engines_[from]->ConsumeReply(to, svr);
+      }
+      SendMsg(to, from, svr);
+      return ret;
     });
   }
 
@@ -127,23 +127,38 @@ public:
   {
     enqueueTask(pts_, [from, to, pr, this]() {
       auto ret = callDecideSync(from, to, TstMsgType::Prepare, pr.view);
-      MsgPrepareResponse presp { "err asdeee" };
+      MsgPrepareResponse presp { pr.view, "err asdeee" };
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
         presp = engines_[to]->ConsumeMsg(from, pr);
-      } else return ret;
-
-      std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
-      return engines_[from]->ConsumeReply(to, presp);
+      }
+      SendMsg(to, from, presp);
+      return ret;
     });
   }
 
   void SendMsg(int from, int to, const MsgStartViewResponse& svr) override
   {
+    enqueueTask(pts_, [from, to, svr, this]() {
+      auto ret = callDecideSync(from, to, TstMsgType::StartViewResponse, svr.view);
+      if (!ret) {
+        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
+        ret = engines_[to]->ConsumeReply(from, svr);
+      }
+      return ret;
+    });
   }
 
-  void SendMsg(int from, int to, const MsgPrepareResponse& pr) override
+  void SendMsg(int from, int to, const MsgPrepareResponse& presp) override
   {
+    enqueueTask(pts_, [from, to, presp, this]() {
+      auto ret = callDecideSync(from, to, TstMsgType::PrepareResponse, presp.view);
+      if (!ret) {
+        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
+        ret = engines_[to]->ConsumeReply(from, presp);
+      }
+      return ret;
+    });
   }
 
 private:
@@ -248,9 +263,10 @@ TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
 
 
   buggynw.SendMsg(-1, 2, MsgClientOp { 1212, "x=12" });
-  for (int i = 0; i < 150; ++i) {
+  for (int i = 0; i < 151; ++i) {
     if (vsreps[0].CommitID() == 0)
       break;
+    ASSERT_LT(i, 150);
     sleep_for(std::chrono::milliseconds(5));
   }
   {

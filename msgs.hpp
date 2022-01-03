@@ -32,12 +32,14 @@ struct MsgStartView {
 };
 
 struct MsgStartViewResponse {
+    int view;
     std::string err;
     int last_commit;
     std::vector<std::string> missing_entries;
 };
 
 struct MsgPrepareResponse {
+    int view;
     std::string err;
     int op;
 };

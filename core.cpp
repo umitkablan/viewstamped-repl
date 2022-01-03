@@ -66,13 +66,13 @@ template <typename TMsgDispatcher, typename TStateMachine>
 MsgStartViewResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgStartView& sv)
 {
   auto res = coresm_.SVReceived(from, sv);
-  return MsgStartViewResponse {};
+  return MsgStartViewResponse { coresm_.View() };
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(const MsgClientOp& msg)
 {
-  // cout << coresm_.replica_ << ":" << coresm_.View() << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.opstr << " op_:" << op_ << endl;
+  cout << coresm_.replica_ << ":" << coresm_.View() << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.opstr << " op_:" << op_ << endl;
   if (coresm_.Leader() != coresm_.replica_) {
     dispatcher_.SendMsg(coresm_.Leader(), msg);
     return 0;
@@ -93,13 +93,14 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(cons
 template <typename TMsgDispatcher, typename TStateMachine>
 MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgPrepare& msgpr)
 {
-  // cout << coresm_.replica_ << ":" << coresm_.View() << " (Prep) from:" << from << " prep.op:" << msgpr.op << " op_:" << op_ << endl;
+  // cout << coresm_.replica_ << ":" << coresm_.View() << " (Prep) from:" << from << " prep:" << msgpr.commit << "/" << msgpr.op << " op_:" << op_ << endl;
   auto res = coresm_.PrepareReceived(msgpr);
   if (!res) {
     // Consume op
   }
-  op_ = msgpr.op;
-  return MsgPrepareResponse { "", msgpr.op };
+  if (op_ < msgpr.op)
+    op_ = msgpr.op;
+  return MsgPrepareResponse { coresm_.View(), "", op_ };
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
@@ -112,10 +113,14 @@ template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(int from, const MsgPrepareResponse& presp)
 {
   // cout << coresm_.replica_ << ":" << coresm_.View() << " (PrepResp) from:" << from << " msg.op:" << presp.op << " op_:" << op_ << endl;
+  if (!presp.err.empty())
+    return -2;
+  if (presp.view != coresm_.View())
+    return -3;
   if (op_ == commit_)
     return 0; // already committed
   if (op_ != presp.op)
-    return -1; // old view, unmatching
+    return -4; // old view, unmatching
   if (recv_prep_replies_[from])
     return 0; // double sent
 

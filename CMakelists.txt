@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(tstamped-logr VERSION 0.0.1 LANGUAGES CXX)
+project(viewstamped-repl VERSION 0.0.1 LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -16,32 +16,5 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-#include(ExternalProject)
-#ExternalProject_Add(googletest
-#    URL https://github.com/google/googletest/archive/refs/tags/release-1.11.0.tar.gz
-#    INSTALL_COMMAND ""
-#)
-#ExternalProject_Get_Property(googletest binary_dir)
-#add_library(gtest UNKNOWN IMPORTED)
-#add_library(gtest_main UNKNOWN IMPORTED)
-#set_target_properties(gtest PROPERTIES
-#    IMPORTED_LOCATION ${binary_dir}/libgtest.a)
-#set_target_properties(gtest_main PROPERTIES
-#    IMPORTED_LOCATION ${binary_dir}/libgtest_main.a)
-#add_dependencies(gtest googletest)
-#add_dependencies(gtest_main googletest)
+add_subdirectory(src)
 
-enable_testing()
-
-add_executable(
-    core_test coresm.cpp coresm_test.cpp core_impl_test.cpp core_test.cpp)
-
-#target_include_directories(
-#  core_test PUBLIC ${GMOCK_INCLUDEDIR})
-target_link_libraries(
-  core_test gtest_main)
-target_link_libraries(
-  core_test gmock)
-
-include(GoogleTest)
-gtest_discover_tests(core_test)

@@ -250,9 +250,10 @@ TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
 
 
   buggynw.SendMsg(-1, 2, MsgClientOp { 1212, "x=12" });
-  for (int i = 0; i < 150; ++i) {
+  for (int i = 0; i < 151; ++i) {
     if (vsreps[0].CommitID() == 0)
       break;
+    ASSERT_LT(i, 150);
     sleep_for(std::chrono::milliseconds(5));
   }
   {

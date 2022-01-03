@@ -268,7 +268,8 @@ TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
   // make replica:0 isolated (receive & send) -> Changes to view:1 automatically
   // --------------------------------------------------------------
   buggynw.SetDecideFun(
-    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) {
+    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+      if (from == to) return 0;
       return from==0 || to==0;
     });
   // We can only (and safely) communicate with replica:0 directly
@@ -306,7 +307,10 @@ TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
   // make replica:1 isolated (receive-only, block outgoing messages)
   // --------------------------------------------------------------
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return from==1; });
+    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+      if (from == to) return 0;
+      return from==1;
+    });
   for (int i = 0; i < 100; ++i) {
     if (vsreps[0].View() > 1 && vsreps[0].GetStatus() == Status::Normal
         && vsreps[2].View() > 1 && vsreps[2].GetStatus() == Status::Normal
@@ -337,9 +341,10 @@ TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
   // make replica:2-3 isolated (receive & send) -> Changes to view:4 automatically
   // --------------------------------------------------------------
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) {
-        return from == 2 || to == 2 || from == 3 || to == 3;
-      });
+    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+      if (from == to) return 0;
+      return from == 2 || to == 2 || from == 3 || to == 3;
+    });
   for (int i = 0; i < 100; ++i) {
     if (vsreps[0].View() > 2 && vsreps[0].GetStatus() == Status::Normal
         && vsreps[1].View() > 2 && vsreps[1].GetStatus() == Status::Normal
@@ -373,7 +378,8 @@ TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
   // make replica:4-0 isolated: block send but not between 0 and 4
   // --------------------------------------------------------------
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) {
+      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+        if (from == to) return 0;
         return (from == 4 && to != 0) || (from == 0 && to != 4); //from == 4 || from == 0;
       });
   for (int i = 0; i < 100; ++i) {
@@ -413,11 +419,11 @@ TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
   //
 
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) {
-        if ((from == 1 && to != 2) || (from == 2 && to != 1))
-          return true;
-        return (to == 2) || (to == 1);
-      });
+    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+      if (from == to) return 0;
+      if ((from == 1 && to != 2) || (from == 2 && to != 1)) return 1;
+      return (to == 2) || (to == 1);
+    });
   for (int i = 0; i < 100; ++i) {
     if (vsreps[0].View() > 6 && vsreps[2].GetStatus() == Status::Normal
         && vsreps[3].View() > 6 && vsreps[3].GetStatus() == Status::Normal

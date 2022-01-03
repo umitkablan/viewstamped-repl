@@ -72,7 +72,7 @@ MsgStartViewResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>
 template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(const MsgClientOp& msg)
 {
-  cout << coresm_.replica_ << ":" << coresm_.View() << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.opstr << " op_:" << op_ << endl;
+  // cout << coresm_.replica_ << ":" << coresm_.View() << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.opstr << " op_:" << op_ << endl;
   if (coresm_.Leader() != coresm_.replica_) {
     dispatcher_.SendMsg(coresm_.Leader(), msg);
     return 0;
@@ -120,7 +120,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(in
   if (op_ == commit_)
     return 0; // already committed
   if (op_ != presp.op)
-    return -4; // old view, unmatching
+    return -1; // old view, unmatching
   if (recv_prep_replies_[from])
     return 0; // double sent
 

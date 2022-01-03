@@ -23,7 +23,7 @@ public:
   VSREngineCore(int totreplicas, int replica);
 
   std::variant<std::monostate, PrepareMsgsType, SVCMsgsType>
-      HealthTimeoutTicked();
+      HealthTimeoutTicked(bool has_sent_prepare=false);
   std::variant<std::monostate, std::pair<int, MsgDoViewChange>, VSREngineCore::SVCMsgsType>
       SVCReceived(int from, const MsgStartViewChange& svc);
   std::vector<std::pair<int, MsgStartView>>

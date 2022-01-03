@@ -19,11 +19,13 @@ VSREngineCore::VSREngineCore(int totreplicas, int replica)
 }
 
 std::variant<std::monostate, VSREngineCore::PrepareMsgsType, VSREngineCore::SVCMsgsType>
-VSREngineCore::HealthTimeoutTicked()
+VSREngineCore::HealthTimeoutTicked(bool has_sent_prepare)
 {
   std::variant<std::monostate, VSREngineCore::PrepareMsgsType, VSREngineCore::SVCMsgsType> ret;
 
   if (replica_ == (view_ % totreplicas_)) { // The leader
+    if (has_sent_prepare)
+      return ret;
     PrepareMsgsType arr;
     arr.reserve(totreplicas_-1);
     for (int i = 0; i < totreplicas_; ++i) {

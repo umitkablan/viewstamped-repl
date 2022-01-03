@@ -20,8 +20,6 @@ public:
     MOCK_METHOD(void, SendMsg, (int to, const MsgDoViewChange&), (override));
     MOCK_METHOD(void, SendMsg, (int to, const MsgStartView&), (override));
     MOCK_METHOD(void, SendMsg, (int to, const MsgPrepare&), (override));
-    MOCK_METHOD(void, SendMsg, (int to, const MsgStartViewResponse&), (override));
-    MOCK_METHOD(void, SendMsg, (int to, const MsgPrepareResponse&), (override));
 };
 
 class MockStateMachine : public IStateMachine {
@@ -64,15 +62,6 @@ public:
         parent_->SendMsg(from_, to, pr);
     }
 
-    void SendMsg(int to, const MsgStartViewResponse& svr) override
-    {
-        parent_->SendMsg(from_, to, svr);
-    }
-
-    void SendMsg(int to, const MsgPrepareResponse& pr) override
-    {
-        parent_->SendMsg(from_, to, pr);
-    }
 };
 }
 

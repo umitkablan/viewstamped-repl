@@ -16,8 +16,6 @@ public:
   virtual void SendMsg(int to, const MsgDoViewChange&) = 0;
   virtual void SendMsg(int to, const MsgStartView&) = 0;
   virtual void SendMsg(int to, const MsgPrepare&) = 0;
-  virtual void SendMsg(int to, const MsgStartViewResponse&) = 0;
-  virtual void SendMsg(int to, const MsgPrepareResponse&) = 0;
 };
 
 class INetDispatcher {
@@ -29,8 +27,6 @@ public:
   virtual void SendMsg(int from, int to, const MsgDoViewChange&) = 0;
   virtual void SendMsg(int from, int to, const MsgStartView&) = 0;
   virtual void SendMsg(int from, int to, const MsgPrepare&) = 0;
-  virtual void SendMsg(int from, int to, const MsgStartViewResponse&) = 0;
-  virtual void SendMsg(int from, int to, const MsgPrepareResponse&) = 0;
 };
 
 class IStateMachine {

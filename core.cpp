@@ -17,6 +17,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicat
   , recv_prep_replies_(totreplicas, 0)
   , op_(-1)
   , commit_(-1)
+  , prepare_sent_(false)
   , continue_healthtick_(true)
 {
 }
@@ -80,6 +81,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(cons
   if (op_ != commit_)
     return -1;
   ++op_;
+  prepare_sent_ = true;
   for (int i=0; i<coresm_.totreplicas_; ++i)
     if (i != coresm_.replica_) {
       dispatcher_.SendMsg(i, MsgPrepare { coresm_.View(), op_, commit_, msg.opstr });
@@ -133,7 +135,8 @@ template <typename TMsgDispatcher, typename TStateMachine>
 void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::healthTickThread()
 {
   while (continue_healthtick_) {
-    auto res = coresm_.HealthTimeoutTicked();
+    auto res = coresm_.HealthTimeoutTicked(prepare_sent_);
+    prepare_sent_ = false;
     if (res.index() == 1) {
       for (const auto& pp : std::get<VSREngineCore::PrepareMsgsType>(res))
         dispatcher_.SendMsg(pp.first, pp.second);

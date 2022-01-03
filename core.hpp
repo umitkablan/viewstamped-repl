@@ -40,6 +40,7 @@ private:
     std::vector<int8_t> recv_prep_replies_;
     int op_;
     int commit_;
+    bool prepare_sent_;
 
 private:
     void healthTickThread();

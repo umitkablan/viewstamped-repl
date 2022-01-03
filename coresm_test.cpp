@@ -139,5 +139,25 @@ TEST(CoreStateMachineTest, DVCWhenOthersRecognizeLeaderDead)
   }
 }
 
+TEST(CoreStateMachineTest, LeaderSendsPrepare)
+{
+  VSREngineCore cr(5, 0); // 0 is leader by default ,at the beginning
+  for (int i = 0; i < 20; ++i) {
+    auto res = cr.HealthTimeoutTicked(true);
+    ASSERT_EQ(0, res.index());
+  }
+
+  auto res = cr.HealthTimeoutTicked();
+  ASSERT_EQ(1, res.index());
+
+  const auto& vec = std::get<VSREngineCore::PrepareMsgsType>(res);
+  ASSERT_EQ(4, vec.size());
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_EQ(0, vec[i].second.view);
+    ASSERT_EQ(-1, vec[i].second.op);
+    ASSERT_EQ(-1, vec[i].second.commit);
+  }
+}
+
 }
 }

@@ -1,9 +1,7 @@
 #include "core_impl_test.cpp"
 
 #include <array>
-#include <future>
 #include <gtest/gtest.h>
-#include <mutex>
 
 #include <iostream>
 using std::cout;
@@ -14,217 +12,183 @@ namespace test {
 
 using ::testing::Eq;
 using ::testing::A;
+// using ::testing::TypedEq;
+// using ::testing::_;
 using ::testing::ElementsAre;
+using ::testing::StrictMock;
 
 using std::this_thread::sleep_for;
+using VSRETestType = ViewstampedReplicationEngine<MockTMsgDispatcher, MockStateMachine>;
 
-template <typename TTimestampedReplEngine>
-class FakeTMsgBuggyNetwork : public INetDispatcher {
-public:
-  enum class TstMsgType : char {
-    ClientOp,
-    StartViewCh,
-    DoViewCh,
-    StartView,
-    Prepare,
-    StartViewResponse,
-    PrepareResponse,
-  };
-
-  FakeTMsgBuggyNetwork(std::function<int(int, int, TstMsgType, int)> decFun, bool shuffle = false)
-    : random_chose_border_((RAND_MAX / 3) * 2)
-    , is_shuffle_(shuffle)
-    , decide_(decFun)
-    , break_thread_(false)
-  {
+TEST(CoreTest, BasicDoViewChange)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr(3, 2, msgdispatcher, sm);
+  for (int i=0; i<2; ++i) {
+    cr.HealthTimeoutTicked();
   }
-
-  void SetEnginesStart(std::vector<TTimestampedReplEngine*> engines)
   {
-    if (th_.joinable())
-      throw std::invalid_argument("network thread is running");
-
-    engines_mtxs_ = std::vector<std::mutex>(engines.size());
-    engines_ = std::move(engines);
-
-    break_thread_ = false;
-    th_ = std::thread([this]() { threadTask(); });
-    for (auto& e : engines_)
-      e->Start();
-  }
-
-  void CleanEnginesStop()
-  {
-    for (auto& e : engines_)
-      e->Stop();
-
-    break_thread_ = true;
-    if (th_.joinable())
-      th_.join();
-    finishEnqueuedTasks();
-
-    engines_.clear();
-    engines_mtxs_.clear();
-  }
-
-  void SetDecideFun(std::function<int(int, int, TstMsgType, int)> decFun)
-  {
-    std::lock_guard<std::mutex> lck(decide_mtx_);
-    decide_ = decFun;
-  }
-
-  void SendMsg(int from, int to, const MsgClientOp& cliop) override
-  {
-    enqueueTask(pts_, [from, to, cliop, this]() {
-      auto ret = callDecideSync(from, to, TstMsgType::ClientOp, -1);
-      if (!ret) {
-        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
-        ret = engines_[to]->ConsumeMsg(cliop);
-      }
-      return ret;
+    std::vector<int> res;
+    EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgStartViewChange&>())).WillRepeatedly([&res](int to, const MsgStartViewChange& svc) {
+      ASSERT_EQ(1, svc.view);
+      res.push_back(to);
     });
-  }
 
-  void SendMsg(int from, int to, const MsgStartViewChange& svc) override
+    cr.HealthTimeoutTicked();
+    ASSERT_THAT(res, ElementsAre(0, 1, 2));
+  }
   {
-    enqueueTask(pts_, [from, to, svc, this]() {
-      auto ret = callDecideSync(from, to, TstMsgType::StartViewCh, svc.view);
-      if (!ret) {
-        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
-        ret = engines_[to]->ConsumeMsg(from, svc);
-      }
-      return ret;
+    cr.ConsumeMsg(1, MsgStartViewChange { 1 });
+
+    EXPECT_CALL(msgdispatcher, SendMsg(1, A<const MsgDoViewChange&>())).WillOnce([](int to, const MsgDoViewChange& dvc) {
+      ASSERT_EQ(1, dvc.view);
     });
+    cr.ConsumeMsg(2, MsgStartViewChange { 1 });
   }
+}
 
-  void SendMsg(int from, int to, const MsgDoViewChange& dvc) override
+TEST(CoreTest, FilterDuplicateSVCs)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr(5, 4, msgdispatcher, sm);
+
+  for (int i = 0; i < 2; ++i) {
+    cr.HealthTimeoutTicked();
+  }
   {
-    enqueueTask(pts_, [from, to, dvc, this]() {
-      auto ret = callDecideSync(from, to, TstMsgType::DoViewCh, dvc.view);
-      if (!ret) {
-        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
-        ret = engines_[to]->ConsumeMsg(from, dvc);
-      }
-      return ret;
+    std::vector<int> res;
+    EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgStartViewChange&>())).WillRepeatedly([&res](int to, const MsgStartViewChange& svc) {
+      ASSERT_EQ(1, svc.view);
+      res.push_back(to);
     });
+
+    cr.HealthTimeoutTicked();
+    ASSERT_THAT(res, ElementsAre(0, 1, 2, 3, 4));
   }
-
-  void SendMsg(int from, int to, const MsgStartView& sv) override
   {
-    enqueueTask(pts_, [from, to, sv, this]() {
-      auto ret = callDecideSync(from, to, TstMsgType::StartView, sv.view);
-      MsgStartViewResponse svr{ "failxd-13 network" };
-      if (!ret) {
-        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
-        svr = engines_[to]->ConsumeMsg(from, sv);
-      } else
-        return ret;
+    cr.ConsumeMsg(1, MsgStartViewChange { 1 });
+    // Filter these and expect replica!=1 to send SVC to proceed to DVC
+    cr.ConsumeMsg(1, MsgStartViewChange { 1 });
+    cr.ConsumeMsg(1, MsgStartViewChange { 1 });
+  }
+  {
+    cr.ConsumeMsg(4, MsgStartViewChange { 1 });
 
-      ret = callDecideSync(from, to, TstMsgType::StartViewResponse, sv.view);
-      if (!ret) {
-        std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
-        return engines_[from]->ConsumeReply(to, svr);
-      }
-      return ret;
+    EXPECT_CALL(msgdispatcher, SendMsg(1, A<const MsgDoViewChange&>())).WillOnce([](int to, const MsgDoViewChange& dvc) {
+      ASSERT_EQ(1, dvc.view);
     });
+    cr.ConsumeMsg(2, MsgStartViewChange { 1 });
   }
+}
 
-  void SendMsg(int from, int to, const MsgPrepare& pr) override
+TEST(CoreTest, FilterDuplicateSVCsWhileViewInc)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr(5, 4, msgdispatcher, sm);
+
+  for (int i = 0; i < 2; ++i) {
+    cr.HealthTimeoutTicked();
+  }
   {
-    enqueueTask(pts_, [from, to, pr, this]() {
-      auto ret = callDecideSync(from, to, TstMsgType::Prepare, pr.view);
-      MsgPrepareResponse presp { "err asdeee" };
-      if (!ret) {
-        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
-        presp = engines_[to]->ConsumeMsg(from, pr);
-      } else return ret;
-
-      ret = callDecideSync(from, to, TstMsgType::PrepareResponse, pr.view);
-      if (!ret) {
-        std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
-        return engines_[from]->ConsumeReply(to, presp);
-      }
-      return ret;
+    std::vector<int> res;
+    EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgStartViewChange&>())).WillRepeatedly([&res](int to, const MsgStartViewChange& svc) {
+      ASSERT_EQ(1, svc.view);
+      res.push_back(to);
     });
+
+    cr.HealthTimeoutTicked();
+    ASSERT_THAT(res, ElementsAre(0, 1, 2, 3, 4));
   }
-
-private:
-  int random_chose_border_;
-  bool is_shuffle_;
-  std::vector<TTimestampedReplEngine*> engines_;
-  std::vector<std::mutex> engines_mtxs_;
-  std::mutex decide_mtx_;
-  std::function<int(int, int, TstMsgType, int)> decide_;
-
-  bool break_thread_;
-  std::thread th_;
-
-  mutable std::mutex packs_mtx_;
-
-  std::vector<std::packaged_task<int()>> pts_;
-
-  int callDecideSync(int from, int to, TstMsgType ty, int view)
   {
-    std::lock_guard<std::mutex> lck(decide_mtx_);
-    return decide_(from, to, ty, view);
+    cr.ConsumeMsg(1, MsgStartViewChange { 1 });
+    // Filter these and expect replica!=1 to send SVC to proceed to DVC
+    cr.ConsumeMsg(1, MsgStartViewChange { 1 });
+    cr.ConsumeMsg(1, MsgStartViewChange { 1 });
   }
-
-  template <typename PtCont, typename Fun>
-  auto enqueueTask(PtCont& c, Fun&& f) -> std::future<typename std::result_of<Fun()>::type>
   {
-    typename PtCont::value_type pt(std::move(f));
-    auto fut = pt.get_future();
-    {
-      std::lock_guard<std::mutex> lck(packs_mtx_);
+    cr.ConsumeMsg(3, MsgStartViewChange { 2 });
+    cr.ConsumeMsg(3, MsgStartViewChange { 2 });
+    cr.ConsumeMsg(2, MsgStartViewChange { 2 });
 
-      if (c.empty())
-        c.push_back(std::move(pt));
-      else {
-        auto i = is_shuffle_ ? (std::rand() % (c.size() + 1)) : 0;
-        c.insert(c.begin() + i, std::move(pt));
-      }
+    EXPECT_CALL(msgdispatcher, SendMsg(2, A<const MsgDoViewChange&>())).WillOnce([](int to, const MsgDoViewChange& dvc) {
+      ASSERT_EQ(2, dvc.view);
+    });
+    cr.ConsumeMsg(4, MsgStartViewChange { 2 });
+  }
+}
+
+TEST(CoreTest, DVCWhenOthersRecognizeLeaderDead)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr(5, 4, msgdispatcher, sm);
+
+  // I got one unmet tick, not enough to emit SVC
+  {
+    cr.HealthTimeoutTicked();
+  }
+  // However someone else noticed leader inactivity in the mean time; join the party
+  {
+    std::vector<int> res;
+    EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgStartViewChange&>())).WillRepeatedly([&res](int to, const MsgStartViewChange& svc) {
+      ASSERT_EQ(1, svc.view);
+      res.push_back(to);
+    });
+
+    cr.ConsumeMsg(2, MsgStartViewChange { 1 });
+    ASSERT_THAT(res, ElementsAre(0, 1, 2, 3, 4));
+  }
+  // And then, received another unmet tick
+  {
+    cr.HealthTimeoutTicked();
+
+    std::vector<int> res;
+    EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgStartViewChange&>())).WillRepeatedly([&res](int to, const MsgStartViewChange& svc) {
+      ASSERT_EQ(1, svc.view);
+      res.push_back(to);
+    });
+
+    cr.HealthTimeoutTicked();
+    ASSERT_THAT(res, ElementsAre(0, 1, 2, 3, 4));
+  }
+}
+
+TEST(CoreTest, LeaderSendsPrepare)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr(5, 0, msgdispatcher, sm); // 0 is leader by default ,at the beginning
+
+  std::vector<int> res;
+  EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgPrepare&>())).WillRepeatedly(
+    [&res, &cr](int to, const MsgPrepare& pr) {
+      ASSERT_EQ(0, pr.view);
+      res.push_back(to);
+      cr.ConsumeReply(to, MsgPrepareResponse { "", pr.op });
+    });
+
+  cr.HealthTimeoutTicked();
+  ASSERT_THAT(res, ElementsAre(1, 2, 3, 4));
+  res.clear();
+
+  { // When ClientOp is received before Tick we optimize Prepare's
+    for (int i = 0; i < 20; ++i) {
+      cr.ConsumeMsg(MsgClientOp{1231, "x=y"});
+      ASSERT_THAT(res, ElementsAre(1, 2, 3, 4));
+      res.clear();
+      cr.HealthTimeoutTicked();
+      ASSERT_EQ(0, res.size()); // no prepares sent (for now)
     }
-    return fut;
+
+    cr.HealthTimeoutTicked(); // no optimization here since after ClientOp, ticked twice
+    ASSERT_THAT(res, ElementsAre(1, 2, 3, 4));
   }
+}
 
-  template <typename Cont>
-  auto popLastOf(Cont& c) -> std::pair<bool, typename Cont::value_type>
-  {
-    std::pair<bool, typename Cont::value_type> ret;
-    ret.first = false;
-    std::lock_guard<std::mutex> lck(packs_mtx_);
-
-    if (c.empty())
-      return ret;
-    ret.first = true;
-    ret.second = std::move(c.back());
-    c.pop_back();
-    return ret;
-  }
-
-  void threadTask()
-  {
-    while (!break_thread_) {
-      sleep_for(std::chrono::milliseconds(5));
-      auto [found, pt] = popLastOf(pts_);
-      if (found) {
-        std::thread([p = std::move(pt)]() mutable { p(); }).detach();
-      }
-    }
-  }
-
-  int finishEnqueuedTasks()
-  {
-    while(true) {
-      auto [found, pt] = popLastOf(pts_);
-      if (!found) break;
-      std::thread([p = std::move(pt)]() mutable { p(); }).detach();
-    }
-    return pts_.size();
-  }
-};
-
-TEST(CoreTest, ViewChange_BuggyNetworkNoShuffle_IsolateLeader0)
+TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 {
   using VSREtype = ViewstampedReplicationEngine<ParentMsgDispatcher, MockStateMachine>;
 

@@ -51,21 +51,24 @@ private:
     int op_;
     int commit_;
 
-    std::vector<int8_t> recv_prep_replies_;
     bool prepare_sent_;
     unsigned latest_healthtick_received_;
     unsigned healthcheck_tick_;
 
 private:
     struct trackDups {
-      trackDups(int totreplicas)
+      trackDups(int totreplicas, int emptyID = -1)
         : recv_replicas_(totreplicas * totreplicas, 0)
-        , recv_views_(totreplicas, -1) {}
+        , recv_views_(totreplicas, emptyID)
+        , empty_id (emptyID)
+        {}
       std::vector<int8_t> recv_replicas_;
       std::vector<int> recv_views_;
+      int empty_id;
     };
     trackDups trackDups_SVCs_;
     trackDups trackDups_DVCs_;
+    trackDups trackDups_PrepResps_;
 
     std::pair<bool,int>
     checkDuplicate(trackDups&, int from, int view);

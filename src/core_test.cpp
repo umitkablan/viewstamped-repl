@@ -188,6 +188,56 @@ TEST(CoreTest, LeaderSendsPrepare)
   }
 }
 
+TEST(CoreTest, LeaderPrepareTimeouts)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr(5, 0, msgdispatcher, sm); // 0 is leader by default, at the beginning
+
+  std::vector<std::pair<int, MsgPrepare>> recv;
+  EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgPrepare&>())).WillRepeatedly(
+    [&recv, &cr](int to, const MsgPrepare& pr) {
+      ASSERT_EQ(0, pr.view);
+      recv.push_back(std::make_pair(to, pr));
+      // don't call PrepareResponse to simulate a fail/isolation
+    });
+
+  {
+    cr.ConsumeMsg(MsgClientOp { 1278, "xy=ert" });
+    ASSERT_EQ(4, recv.size());
+    for (int i = 0; i < recv.size(); ++i) {
+      ASSERT_EQ(i+1, recv[i].first);
+      ASSERT_EQ(0, recv[i].second.op);
+    }
+    recv.clear();
+  }
+
+  cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // only replica:1 replies
+
+  { // When ClientOp is received before Tick we optimize Prepare's
+    cr.HealthTimeoutTicked();
+    ASSERT_EQ(0, recv.size());
+  }
+  for (int i = 0; i < 2; ++i) { // let's timeout the op
+    cr.HealthTimeoutTicked();
+    ASSERT_EQ(4, recv.size());
+    for (int i = 0; i < recv.size(); ++i) {
+      ASSERT_EQ(i+1, recv[i].first);
+      ASSERT_EQ(0, recv[i].second.op);
+    }
+    recv.clear();
+  }
+
+  // Prepare timeouts and op is discarded
+  {
+    cr.HealthTimeoutTicked();
+    ASSERT_EQ(0, recv.size());
+    ASSERT_EQ(-1, cr.CommitID());
+    ASSERT_EQ(-1, cr.OpID());
+  }
+
+}
+
 TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 {
   using VSREtype = ViewstampedReplicationEngine<ParentMsgDispatcher, MockStateMachine>;
@@ -246,9 +296,9 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
       break;
     sleep_for(std::chrono::milliseconds(50));
   }
-  // CommitID is not 0+1 since it's isolated and cannot receive PrepareOK
+  // Op & CommitID is not 0+1 since replica:0 is isolated and cannot receive PrepareReponses
   ASSERT_EQ(0, vsreps[0].CommitID());
-  ASSERT_EQ(1, vsreps[0].OpID());
+  ASSERT_EQ(0, vsreps[0].OpID());
 
   int cnt = 0;
   for (const auto& rep : vsreps) {
@@ -407,6 +457,21 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(Status::Normal, vsreps[1].GetStatus());
   ASSERT_EQ(6, vsreps[2].View());
   ASSERT_EQ(Status::Normal, vsreps[2].GetStatus());
+
+  // Separated leader should not be able to commit an op without consensus followers
+  vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=987" });
+  ASSERT_EQ(1, vsreps[1].OpID());
+  ASSERT_EQ(0, vsreps[1].CommitID());
+  for (int i = 0; i < 21; ++i) {
+    if (vsreps[1].OpID() == vsreps[1].CommitID())
+      break;
+    ASSERT_LT(i, 20);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  ASSERT_EQ(0, vsreps[1].OpID());
+  ASSERT_EQ(0, vsreps[1].CommitID());
+  ASSERT_EQ(0, vsreps[2].OpID());
+  ASSERT_EQ(0, vsreps[2].CommitID());
 
   // --------------------------------------------------------------
   // Make replica:1-2 non-isolated again (join them to majority island)

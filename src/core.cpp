@@ -27,8 +27,6 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicat
   , trackDups_PrepResps_(totreplicas, -2)
   , continue_healthtick_(true)
 {
-  if (replica_ == (view_ % totreplicas_))
-    --latest_healthtick_received_;
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
@@ -162,7 +160,6 @@ MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::
     view_ = msgpr.view;
     status_ = Status::Normal;
   } else if (view_ > msgpr.view) {
-    // cout << replica_ << ":" << view_ << " (PREP) Skipping old v:" << msgpr.view << endl;
     ret.err = "skipping old PREP v:" + std::to_string(msgpr.view);
   }
 
@@ -257,7 +254,7 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
       return;
     }
     if (op_ != commit_) {
-      if ((healthcheck_tick_ - latest_healthtick_received_) > 3) {
+      if (diff > 3) {
         cout << replica_ << ":" << view_ << " (TICK) reverting the op:" << op_
             << " to commit:" << commit_ << endl;
         op_ = commit_; // give up, revert the op

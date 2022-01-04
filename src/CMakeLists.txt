@@ -2,7 +2,7 @@
 enable_testing()
 
 add_executable(
-    core_test coresm.cpp coresm_test.cpp core_impl_test.cpp core_test.cpp)
+    core_test core_impl_test.cpp core_test.cpp)
 
 target_link_libraries(
   core_test gtest_main)

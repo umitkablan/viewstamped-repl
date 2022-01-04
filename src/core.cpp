@@ -19,12 +19,12 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicat
   , status_(Status::Normal)
   , op_(-1)
   , commit_(-1)
-  , recv_prep_replies_(totreplicas, 0)
   , prepare_sent_(false)
   , latest_healthtick_received_(1)
   , healthcheck_tick_(1)
   , trackDups_SVCs_(totreplicas)
   , trackDups_DVCs_(totreplicas)
+  , trackDups_PrepResps_(totreplicas, -2)
   , continue_healthtick_(true)
 {
 }
@@ -59,16 +59,16 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int 
     trackDups_SVCs_.recv_replicas_.begin()+(idx+1)*totreplicas_,
     1);
 
-  if (cnt > totreplicas_ / 2) { // don't include self
+  if (cnt > totreplicas_ / 2) { // don't include self...
     status_ = Status::Change;
     view_ = msgsvc.view;
-    healthcheck_tick_ = latest_healthtick_received_ - 1;
+    healthcheck_tick_ = latest_healthtick_received_;
     dispatcher_.SendMsg(msgsvc.view % totreplicas_, MsgDoViewChange { msgsvc.view });
   } else if (msgsvc.view == view_ + 1
       && healthcheck_tick_ > latest_healthtick_received_
       && healthcheck_tick_ - latest_healthtick_received_ < 3) {
     for (int i = 0; i < totreplicas_; ++i)
-      dispatcher_.SendMsg(i, MsgStartViewChange { view_ + 1 });
+      dispatcher_.SendMsg(i, MsgStartViewChange { view_ + 1 }); //...since we send to ourself
   }
 
   return 0;
@@ -77,6 +77,11 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int 
 template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgDoViewChange& dvc)
 {
+  if ((view_ % totreplicas_) != replica_) {
+    cout << replica_ << ":" << view_ << " (DoVC) v:" << dvc.view << "I am not the Leader" << endl;
+    return -1;
+  }
+
   auto [isdup, idx] = checkDuplicate(trackDups_DVCs_, from, dvc.view);
   if (isdup)
     return 0;
@@ -91,6 +96,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int 
     view_ = dvc.view;
     status_ = Status::Normal;
 
+    healthcheck_tick_ = latest_healthtick_received_;
     for (int i = 0; i < totreplicas_; ++i) {
       if (i != replica_)
         dispatcher_.SendMsg(i, MsgStartView { dvc.view });
@@ -131,6 +137,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(cons
   if (op_ != commit_)
     return -1;
   ++op_;
+  latest_healthtick_received_ = healthcheck_tick_;
   prepare_sent_ = true;
   for (int i=0; i<totreplicas_; ++i)
     if (i != replica_)
@@ -142,72 +149,127 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(cons
 template <typename TMsgDispatcher, typename TStateMachine>
 MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgPrepare& msgpr)
 {
+  if ((view_ % totreplicas_) == replica_ && view_ == msgpr.view) {
+    return MsgPrepareResponse { "I am not a follower!", msgpr.op };
+  }
+
   // cout << replica_ << ":" << view_ << " (PREP) v:" << pr.view << endl;
+  auto ret = MsgPrepareResponse { "", msgpr.op };
   if (view_ < msgpr.view) {
     cout << replica_ << ":" << view_ << " (PREP) I am OUTDATED v:" << msgpr.view << endl;
     view_ = msgpr.view;
     status_ = Status::Normal;
   } else if (view_ > msgpr.view) {
-    cout << replica_ << ":" << view_ << " (PREP) Skipping old v:" << msgpr.view << endl;
-    return MsgPrepareResponse { "skipping old PREP", msgpr.op };
+    ret.err = "skipping old PREP v:" + std::to_string(msgpr.view);
   }
 
   if (status_ == Status::Normal) {
     if (replica_ != view_ % totreplicas_)
       healthcheck_tick_ = latest_healthtick_received_;
   }
-  op_ = msgpr.op;
-  return MsgPrepareResponse { "", msgpr.op };
+
+  /*
+   *
+   * sync missing ops here
+   *
+   */
+  commit_ = op_ = msgpr.op;
+
+  return ret;
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(int from, const MsgStartViewResponse& svresp)
 {
+  if ((view_ % totreplicas_) != replica_) {
+    cout << replica_ << ":" << view_ << " (SVCResp) from:" << from
+        << " lastcommit:" << svresp.last_commit << "; I am not the Leader " << endl;
+    return -1;
+  }
+
   return 0;
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(int from, const MsgPrepareResponse& presp)
 {
-  // cout << coresm_.replica_ << ":" << coresm_.View() << " (PrepResp) from:" << from << " msg.op:" << presp.op << " op_:" << op_ << endl;
-  if (op_ == commit_)
-    return 0; // already committed
-  if (op_ != presp.op)
-    return -1; // old view, unmatching
-  if (recv_prep_replies_[from])
-    return 0; // double sent
-
-  recv_prep_replies_[from] = 1;
-  if (std::count(recv_prep_replies_.begin(), recv_prep_replies_.end(), 1)
-        >= (totreplicas_ / 2)) {
-    /*
-     * Commit to state machine here
-     */
-    commit_ = op_;
-    std::fill(recv_prep_replies_.begin(), recv_prep_replies_.end(), 0);
+  if (!presp.err.empty()) {
+    cout << replica_ << ":" << view_ << " (PrepResp) from:" << from << " msg.op:" << presp.op
+         << " msg.err:" << presp.err << ((view_ % totreplicas_) == replica_ ? " [*]" : "")
+         << endl;
+    return -2;
   }
+  if ((view_ % totreplicas_) != replica_) {
+    cout << replica_ << ":" << view_ << " (PrepResp) from:" << from << " msg.op:" << presp.op
+         << " I am NOT the Leader" << endl;
+    return -1;
+  }
+  if (op_ != presp.op) {
+    cout << replica_ << ":" << view_ << " (PrepResp) from:" << from << " msg.op:" << presp.op
+        << " does not match with my op:" << op_ << endl;
+    return -3; // old view, unmatching
+  }
+
+  auto [isdup, idx] = checkDuplicate(trackDups_PrepResps_, from, presp.op);
+  if (isdup)
+    return 0; // double sent
+  // cout << replica_ << ":" << view_ << " (PrepResp) from:" << from << " msg.op:" << presp.op << " op_:" << op_ << endl;
+
+  auto cnt = std::count(
+    trackDups_PrepResps_.recv_replicas_.begin()+(idx*totreplicas_),
+    trackDups_PrepResps_.recv_replicas_.begin()+(idx+1)*totreplicas_,
+    1);
+
+  if (cnt < totreplicas_ / 2) // is consensus not achieved?
+    return 0;
+
+  std::fill(
+      trackDups_PrepResps_.recv_replicas_.begin()+(idx*totreplicas_),
+      trackDups_PrepResps_.recv_replicas_.begin()+(idx+1)*totreplicas_,
+      0);
+  trackDups_PrepResps_.recv_views_[idx] = -2;
+  latest_healthtick_received_ = healthcheck_tick_;
+
+  if (op_ == commit_) {
+    return 0; // already committed
+  }
+
+  /*
+   * Commit to state machine here
+   */
+  commit_ = op_;
+
   return 0;
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
 void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutTicked()
 {
+  ++healthcheck_tick_;
+  auto diff = healthcheck_tick_ - latest_healthtick_received_;
+
   if (replica_ == (view_ % totreplicas_)) { // The leader
     if (prepare_sent_) {
       prepare_sent_ = false;
       return;
     }
+    if (op_ != commit_) {
+      if (diff > 3) {
+        cout << replica_ << ":" << view_ << " (TICK) reverting the op:" << op_
+            << " to commit:" << commit_ << endl;
+        op_ = commit_; // give up, revert the op
+        return;
+      }
+    }
     for (int i = 0; i < totreplicas_; ++i) {
       if (i != replica_)
-        dispatcher_.SendMsg(i, MsgPrepare { view_, -1, -1, "" });
+        dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, "" });
     }
     return;
 
   }
   // A follower
 
-  ++healthcheck_tick_;
-  auto diff = healthcheck_tick_ - latest_healthtick_received_;
   if (healthcheck_tick_ > latest_healthtick_received_ && diff > 2) {
     // cout << replica_ << ":" << view_ << " -> sensed isolated leader" << endl;
     if (diff < 4 || (diff > 5 && !(diff % 8))) {
@@ -249,7 +311,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::checkDuplicate(trac
     }
     if (ret.first == -1)
       for(int i=0; i<totreplicas_; ++i)
-        if (td.recv_views_[i] == -1) {
+        if (td.recv_views_[i] == td.empty_id) {
           ret.second = i;
           break;
         }
@@ -265,7 +327,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::checkDuplicate(trac
       if (std::all_of(
         td.recv_replicas_.begin() + fromi*totreplicas_, td.recv_replicas_.begin() + (fromi+1)*totreplicas_,
         [](int v) { return v == 0; }))
-        td.recv_views_[fromi] = -1;
+        td.recv_views_[fromi] = td.empty_id;
   }
 
   auto [viewi, emptyi] = find_view();

@@ -18,7 +18,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Configure with CMake
       working-directory: ${{github.workspace}}
-      run: cmake -S . -B build/${{env.BUILD_TYPE}} -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      run: ls -l ${{github.workspace}} && ls -l ${{github.workspace}}/.. && cmake -S . -B build/${{env.BUILD_TYPE}} -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build and Install
       run: cmake --build build/${{env.BUILD_TYPE}} && cmake --install build/${{env.BUILD_TYPE}} --prefix bin/
     - name: Run Unit Tests

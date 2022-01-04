@@ -4,10 +4,12 @@ enable_testing()
 add_executable(
     core_test core_impl_test.cpp core_test.cpp)
 
-target_link_libraries(
-  core_test gtest_main)
-target_link_libraries(
-  core_test gmock)
+target_link_libraries(core_test
+  PRIVATE gtest_main gmock)
 
 include(GoogleTest)
 gtest_discover_tests(core_test)
+
+install(TARGETS core_test
+        DESTINATION bin/)
+

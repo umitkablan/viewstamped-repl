@@ -168,7 +168,7 @@ public:
       } else
         return ret;
 
-      ret = callDecideSync(from, to, TstMsgType::StartViewResponse, sv.view);
+      ret = callDecideSync(to, from, TstMsgType::StartViewResponse, sv.view);
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
         return engines_[from]->ConsumeReply(to, svr);
@@ -187,7 +187,7 @@ public:
         presp = engines_[to]->ConsumeMsg(from, pr);
       } else return ret;
 
-      ret = callDecideSync(from, to, TstMsgType::PrepareResponse, pr.view);
+      ret = callDecideSync(to, from, TstMsgType::PrepareResponse, pr.view);
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
         return engines_[from]->ConsumeReply(to, presp);

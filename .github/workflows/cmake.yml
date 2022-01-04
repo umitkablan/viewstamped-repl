@@ -17,8 +17,10 @@ jobs:
       run: sudo apt update -y && sudo apt install -y python3-pip build-essential g++ && sudo pip install cmake
     - uses: actions/checkout@v2
     - name: Configure with CMake
+      working-directory: ${{github.workspace}}
       run: cmake -S . -B build/${{env.BUILD_TYPE}} -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build and Install
       run: cmake --build build/${{env.BUILD_TYPE}} && cmake --install build/${{env.BUILD_TYPE}} --prefix bin/
     - name: Run Unit Tests
+      working-directory: ${{github.workspace}}
       run: ./bin/core_test

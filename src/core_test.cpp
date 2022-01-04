@@ -460,10 +460,6 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 
   // Separated leader should not be able to commit an op without consensus followers
   vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=987" });
-  for (int i = 0; i < 10; ++i) {
-    if (vsreps[1].OpID() == 1) break;
-    sleep_for(std::chrono::milliseconds(50));
-  }
   ASSERT_EQ(1, vsreps[1].OpID());
   ASSERT_EQ(0, vsreps[1].CommitID());
   for (int i = 0; i < 21; ++i) {

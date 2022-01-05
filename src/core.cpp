@@ -47,7 +47,8 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::Stop()
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgStartViewChange& msgsvc)
+int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+    int from, const MsgStartViewChange& msgsvc)
 {
   auto [isdup, idx] = checkDuplicate(trackDups_SVCs_, from, msgsvc.view);
   if (isdup)
@@ -75,7 +76,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int 
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgDoViewChange& dvc)
+int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+    int from, const MsgDoViewChange& dvc)
 {
   if ((view_ % totreplicas_) != replica_) {
     cout << replica_ << ":" << view_ << " (DoVC) v:" << dvc.view << "I am not the Leader" << endl;
@@ -107,7 +109,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int 
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-MsgStartViewResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgStartView& sv)
+MsgStartViewResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+    int from, const MsgStartView& sv)
 {
   if (view_ < sv.view) {
     cout << replica_ << ":" << view_ << " (SV) my view is smaller than received v:" << sv.view << endl;
@@ -118,7 +121,8 @@ MsgStartViewResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>
     view_ = sv.view;
     status_ = Status::Normal;
   } else {
-    cout << replica_ << ":" << view_ << " (SV) my view is bigger than received v:" << sv.view << "!! skipping..." << endl;
+    cout << replica_ << ":" << view_ << " (SV) my view is bigger than received v:"
+      << sv.view << "!! skipping..." << endl;
     return MsgStartViewResponse { "My view is bigger than received v:" + std::to_string(sv.view) };
   }
 
@@ -148,7 +152,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(cons
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgPrepare& msgpr)
+MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+    int from, const MsgPrepare& msgpr)
 {
   if ((view_ % totreplicas_) == replica_ && view_ == msgpr.view) {
     return MsgPrepareResponse { "I am not a follower!", msgpr.op };
@@ -180,7 +185,8 @@ MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(int from, const MsgStartViewResponse& svresp)
+int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
+    int from, const MsgStartViewResponse& svresp)
 {
   if ((view_ % totreplicas_) != replica_) {
     cout << replica_ << ":" << view_ << " (SVCResp) from:" << from
@@ -192,7 +198,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(in
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(int from, const MsgPrepareResponse& presp)
+int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
+    int from, const MsgPrepareResponse& presp)
 {
   if (!presp.err.empty()) {
     cout << replica_ << ":" << view_ << " (PrepResp) from:" << from << " msg.op:" << presp.op
@@ -214,7 +221,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(in
   auto [isdup, idx] = checkDuplicate(trackDups_PrepResps_, from, presp.op);
   if (isdup)
     return 0; // double sent
-  // cout << replica_ << ":" << view_ << " (PrepResp) from:" << from << " msg.op:" << presp.op << " op_:" << op_ << endl;
+  // cout << replica_ << ":" << view_ << " (PrepResp) from:" << from << " msg.op:"
+  // << presp.op << " op_:" << op_ << endl;
 
   auto cnt = std::count(
     trackDups_PrepResps_.recv_replicas_.begin()+(idx*totreplicas_),
@@ -293,7 +301,8 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::healthTickThre
 
 template <typename TMsgDispatcher, typename TStateMachine>
 std::pair<bool,int>
-ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::checkDuplicate(trackDups& td, int from, int view)
+ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::checkDuplicate(
+    trackDups& td, int from, int view)
 {
   auto find_from = [this, from, &td]() {
     for(int i=0; i<totreplicas_; ++i) {
@@ -326,15 +335,17 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::checkDuplicate(trac
 
       td.recv_replicas_[fromi * totreplicas_ + from] = 0; // clear previous view's recv record
       if (std::all_of(
-        td.recv_replicas_.begin() + fromi*totreplicas_, td.recv_replicas_.begin() + (fromi+1)*totreplicas_,
-        [](int v) { return v == 0; }))
+            td.recv_replicas_.begin() + fromi*totreplicas_,
+            td.recv_replicas_.begin() + (fromi+1)*totreplicas_,
+            [](int v) { return v == 0; }))
         td.recv_views_[fromi] = td.empty_id;
   }
 
   auto [viewi, emptyi] = find_view();
   if (viewi == -1) {
     if (emptyi == -1) // impossible to not-find empty solution, just for completeness
-      throw std::invalid_argument(std::to_string(replica_) + ":" + std::to_string(view_) + " (checkDupSVC) from:" + std::to_string(from) + " view:" + std::to_string(view));
+      throw std::invalid_argument(std::to_string(replica_) + ":" + std::to_string(view_) +
+                " (checkDupSVC) from:" + std::to_string(from) + " view:" + std::to_string(view));
     td.recv_views_[emptyi] = view;
     td.recv_replicas_[emptyi * totreplicas_ + from] = 1;
     return std::make_pair(false, emptyi);

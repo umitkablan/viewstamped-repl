@@ -268,6 +268,14 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
         cout << replica_ << ":" << view_ << " (TICK) reverting the op:" << op_
             << " to commit:" << commit_ << endl;
         op_ = commit_; // give up, revert the op
+        std::fill(
+          trackDups_PrepResps_.recv_replicas_.begin(),
+          trackDups_PrepResps_.recv_replicas_.end(),
+          0);
+        std::fill(
+          trackDups_PrepResps_.recv_views_.begin(),
+          trackDups_PrepResps_.recv_views_.end(),
+          -2);
         return;
       }
     }

@@ -236,6 +236,35 @@ TEST(CoreTest, LeaderPrepareTimeouts)
     ASSERT_EQ(-1, cr.OpID());
   }
 
+  //
+  // Successful case with challenges
+  //
+
+  {
+    cr.ConsumeMsg(MsgClientOp { 1278, "xy=ert" });
+    ASSERT_EQ(4, recv.size());
+    for (int i = 0; i < recv.size(); ++i) {
+      ASSERT_EQ(i+1, recv[i].first);
+      ASSERT_EQ(0, recv[i].second.op);
+    }
+    recv.clear();
+  }
+
+  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies
+  ASSERT_EQ(-1, cr.CommitID());
+  ASSERT_EQ(0, cr.OpID());
+
+  { // When ClientOp is received before Tick we optimize Prepare's
+    cr.HealthTimeoutTicked();
+    ASSERT_EQ(0, recv.size());
+    ASSERT_EQ(-1, cr.CommitID());
+  }
+
+  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies again
+  ASSERT_EQ(-1, cr.CommitID());
+  cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // replica:1 replies
+  ASSERT_EQ(0, cr.CommitID());
+  ASSERT_EQ(0, cr.OpID());
 }
 
 TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)

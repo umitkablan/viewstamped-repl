@@ -130,10 +130,11 @@ MsgStartViewResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(const MsgClientOp& msg)
+int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+    const MsgClientOp& msg)
 {
   cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.opstr
-      << " op_:" << op_ << endl;
+       << " commit:" << op_ << "/" << commit_ << endl;
   if ((view_ % totreplicas_) != replica_) {
     dispatcher_.SendMsg(view_ % totreplicas_, msg);
     return 0;

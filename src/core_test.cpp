@@ -265,7 +265,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 
   buggynw.SendMsg(-1, 2, MsgClientOp { 1212, "x=12" });
   for (int i = 0; i < 151; ++i) {
-    if (vsreps[0].CommitID() == 0)
+    if (vsreps[0].CommitID() == 0 && vsreps[1].CommitID() == 0 && vsreps[2].CommitID() == 0
+        && vsreps[3].CommitID() == 0 && vsreps[4].CommitID() == 0)
       break;
     ASSERT_LT(i, 150);
     sleep_for(std::chrono::milliseconds(5));

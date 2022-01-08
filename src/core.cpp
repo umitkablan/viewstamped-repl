@@ -171,10 +171,11 @@ MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::
   if ((view_ % totreplicas_) == replica_ && view_ == msgpr.view) {
     return MsgPrepareResponse { "I am not a follower!", msgpr.op };
   }
-  auto ret = MsgPrepareResponse { "", msgpr.op };
 
   // cout << replica_ << ":" << view_ << " (PREP) v:" << msgpr.view << " "
   //   << std::to_string(msgpr.op) + "/" << std::to_string(msgpr.commit) << endl;
+  auto ret = MsgPrepareResponse { "", msgpr.op };
+
   if (view_ < msgpr.view) {
     cout << replica_ << ":" << view_ << " (PREP) I am OUTDATED v:" << msgpr.view << endl;
     view_ = msgpr.view;

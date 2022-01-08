@@ -151,7 +151,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return 0;
   }
 
-  if (op_ != commit_) // an operation is being distributed (prepare/prepare response)
+  if (op_ != commit_)
     return -1;
   ++op_;
   op_str_ = msg.opstr;
@@ -175,7 +175,6 @@ MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::
   // cout << replica_ << ":" << view_ << " (PREP) v:" << msgpr.view << " "
   //   << std::to_string(msgpr.op) + "/" << std::to_string(msgpr.commit) << endl;
   auto ret = MsgPrepareResponse { "", msgpr.op };
-
   if (view_ < msgpr.view) {
     cout << replica_ << ":" << view_ << " (PREP) I am OUTDATED v:" << msgpr.view << endl;
     view_ = msgpr.view;

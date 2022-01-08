@@ -454,13 +454,13 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::clearDupsEntry
   if (idx < 0) {
     std::fill(td.recv_replicas_.begin(), td.recv_replicas_.end(), 0);
     std::fill(td.recv_views_.begin(), td.recv_views_.end(), td.empty_id);
-    return;
+  } else {
+    std::fill(td.recv_replicas_.begin()+(idx*totreplicas_),
+        td.recv_replicas_.begin()+(idx+1)*totreplicas_,
+        0);
+    td.recv_views_[idx] = td.empty_id;
   }
 
-  std::fill(td.recv_replicas_.begin()+(idx*totreplicas_),
-      td.recv_replicas_.begin()+(idx+1)*totreplicas_,
-      0);
-  td.recv_views_[idx] = td.empty_id;
 }
 
 }

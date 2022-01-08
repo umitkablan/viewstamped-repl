@@ -96,22 +96,25 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     trackDups_DVCs_.recv_replicas_.begin()+(idx+1)*totreplicas_,
     1);
 
-  if (cnt >= totreplicas_ / 2) { // include self
-    view_ = dvc.view;
-    status_ = Status::Normal;
+  if (cnt < totreplicas_ / 2) { // include self
+    return 0;
+  }
 
-    healthcheck_tick_ = latest_healthtick_received_;
-    for (int i = 0; i < totreplicas_; ++i) {
-      if (i != replica_)
-        dispatcher_.SendMsg(i, MsgStartView { dvc.view });
-    }
+  view_ = dvc.view;
+  status_ = Status::Normal;
+
+  healthcheck_tick_ = latest_healthtick_received_;
+  for (int i = 0; i < totreplicas_; ++i) {
+    if (i != replica_)
+      dispatcher_.SendMsg(i, MsgStartView { dvc.view });
   }
 
   return 0;
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-MsgStartViewResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+MsgStartViewResponse
+ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     int from, const MsgStartView& sv)
 {
   if (view_ < sv.view) {
@@ -164,7 +167,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+MsgPrepareResponse
+ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     int from, const MsgPrepare& msgpr)
 {
   if ((view_ % totreplicas_) == replica_ && view_ == msgpr.view) {
@@ -234,11 +238,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     }
   }
 
-  std::fill(
-    trackDups_SVResps_.recv_replicas_.begin() + (idx * totreplicas_),
-    trackDups_SVResps_.recv_replicas_.begin() + (idx + 1) * totreplicas_,
-    0);
-  trackDups_SVResps_.recv_views_[idx] = -2;
+  clearDupsEntry(trackDups_SVResps_, idx);
 
   if (maxidx > -1) {
     auto& r = svResps_[maxidx];
@@ -286,11 +286,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   if (cnt < totreplicas_ / 2) // is consensus not achieved?
     return 0;
 
-  std::fill(
-      trackDups_PrepResps_.recv_replicas_.begin()+(idx*totreplicas_),
-      trackDups_PrepResps_.recv_replicas_.begin()+(idx+1)*totreplicas_,
-      0);
-  trackDups_PrepResps_.recv_views_[idx] = -2;
+  clearDupsEntry(trackDups_PrepResps_, idx);
   latest_healthtick_received_ = healthcheck_tick_;
 
   if (op_ == commit_) {
@@ -362,14 +358,7 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
             << " to commit:" << commit_ << endl;
         op_ = commit_; // give up, revert the op
         op_str_.clear();
-        std::fill(
-          trackDups_PrepResps_.recv_replicas_.begin(),
-          trackDups_PrepResps_.recv_replicas_.end(),
-          0);
-        std::fill(
-          trackDups_PrepResps_.recv_views_.begin(),
-          trackDups_PrepResps_.recv_views_.end(),
-          -2);
+        clearDupsEntry(trackDups_PrepResps_);
         return;
       }
     }
@@ -457,6 +446,21 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::checkDuplicate(
   bool ret = td.recv_replicas_[viewi * totreplicas_ + from];
   td.recv_replicas_[viewi * totreplicas_ + from] = 1;
   return std::make_pair(ret, viewi);
+}
+
+template <typename TMsgDispatcher, typename TStateMachine>
+void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::clearDupsEntry(trackDups& td, int idx)
+{
+  if (idx < 0) {
+    std::fill(td.recv_replicas_.begin(), td.recv_replicas_.end(), 0);
+    std::fill(td.recv_views_.begin(), td.recv_views_.end(), td.empty_id);
+  } else {
+    std::fill(td.recv_replicas_.begin()+(idx*totreplicas_),
+        td.recv_replicas_.begin()+(idx+1)*totreplicas_,
+        0);
+    td.recv_views_[idx] = td.empty_id;
+  }
+
 }
 
 }

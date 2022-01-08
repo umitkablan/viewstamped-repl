@@ -22,6 +22,7 @@ public:
     MOCK_METHOD(void, SendMsg, (int to, const MsgDoViewChange&), (override));
     MOCK_METHOD(void, SendMsg, (int to, const MsgStartView&), (override));
     MOCK_METHOD(void, SendMsg, (int to, const MsgPrepare&), (override));
+    MOCK_METHOD(void, SendMsg, (int to, const MsgGetMissingLogs&), (override));
 };
 
 class MockStateMachine : public IStateMachine {
@@ -64,6 +65,11 @@ public:
         parent_->SendMsg(from_, to, pr);
     }
 
+    void SendMsg(int to, const MsgGetMissingLogs& ml) override
+    {
+        parent_->SendMsg(from_, to, ml);
+    }
+
 };
 
 template <typename ViewStampedReplEngine>
@@ -77,6 +83,8 @@ public:
     Prepare,
     StartViewResponse,
     PrepareResponse,
+    GetMissingLogs,
+    MissingLogsResponse,
   };
 
   FakeTMsgBuggyNetwork(std::function<int(int, int, TstMsgType, int)> decFun, bool shuffle = false)
@@ -191,6 +199,25 @@ public:
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
         return engines_[from]->ConsumeReply(to, presp);
+      }
+      return ret;
+    });
+  }
+
+  void SendMsg(int from, int to, const MsgGetMissingLogs& ml) override
+  {
+    enqueueTask(pts_, [from, to, ml, this]() {
+      auto ret = callDecideSync(from, to, TstMsgType::GetMissingLogs, ml.view);
+      MsgMissingLogsResponse mlresp { "err mlllogs" };
+      if (!ret) {
+        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
+        mlresp = engines_[to]->ConsumeMsg(from, ml);
+      } else return ret;
+
+      ret = callDecideSync(to, from, TstMsgType::MissingLogsResponse, ml.view);
+      if (!ret) {
+        std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
+        return engines_[from]->ConsumeReply(to, mlresp);
       }
       return ret;
     });

@@ -324,6 +324,8 @@ TEST(CoreTest, MissingLogs)
     ASSERT_EQ(4, missing_log_reqs[0].second.my_last_commit);
     cr1.ConsumeReply(leader, MsgMissingLogsResponse { "", {7, "ss=45"}, {{6, "ee=dd"}} });
   }
+  cr1.HealthTimeoutTicked();
+  cr1.HealthTimeoutTicked();
   ASSERT_EQ(6, cr1.CommitID());
   ASSERT_EQ(7, cr1.OpID());
 }

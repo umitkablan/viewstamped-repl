@@ -20,7 +20,6 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicat
   , op_(-1)
   , commit_(-1)
   , prepare_sent_(false)
-  , has_missing_logs_(true)
   , latest_healthtick_received_(1)
   , healthcheck_tick_(1)
   , trackDups_SVCs_(totreplicas)
@@ -179,7 +178,6 @@ MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::
     cout << replica_ << ":" << view_ << " (PREP) I am OUTDATED v:" << msgpr.view << endl;
     view_ = msgpr.view;
     status_ = Status::Normal;
-    has_missing_logs_ = true;
   } else if (view_ > msgpr.view) {
     ret.err = "skipping old PREP v:" + std::to_string(msgpr.view);
     return ret;
@@ -189,7 +187,6 @@ MsgPrepareResponse ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::
   if (msgpr.commit == op_) {
     logs_.push_back(std::make_pair(op_, op_str_));
     commit_ = op_;
-    has_missing_logs_ = false;
     op_str_ = std::move(msgpr.opstr);
     op_ = msgpr.op;
   } else if (commit_ < msgpr.commit) { // if (has_missing_logs_)

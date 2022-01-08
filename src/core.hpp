@@ -57,7 +57,6 @@ private:
     std::string op_str_;
 
     bool prepare_sent_;
-    bool has_missing_logs_;
     unsigned latest_healthtick_received_;
     unsigned healthcheck_tick_;
 

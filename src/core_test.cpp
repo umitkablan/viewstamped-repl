@@ -393,6 +393,12 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
     sleep_for(std::chrono::milliseconds(50));
   }
   // Op & CommitID is not 0+1 since replica:0 is isolated and cannot receive PrepareResponses
+  for (int i = 0; i < 21; ++i) {
+    if (vsreps[0].OpID() == vsreps[0].CommitID())
+      break;
+    ASSERT_LT(i, 20);
+    sleep_for(std::chrono::milliseconds(50));
+  }
   ASSERT_EQ(0, vsreps[0].CommitID());
   ASSERT_EQ(0, vsreps[0].OpID());
 

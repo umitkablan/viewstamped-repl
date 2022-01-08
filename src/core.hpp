@@ -79,7 +79,7 @@ private:
 
     std::pair<bool,int>
     checkDuplicate(trackDups&, int from, int view);
-    void clearDupsEntry(trackDups& td, int idx);
+    void clearDupsEntry(trackDups& td, int idx = -1);
 
 private:
     void healthTickThread();

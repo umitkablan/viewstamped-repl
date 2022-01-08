@@ -358,7 +358,7 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
             << " to commit:" << commit_ << endl;
         op_ = commit_; // give up, revert the op
         op_str_.clear();
-        clearDupsEntry(trackDups_PrepResps_, -1);
+        clearDupsEntry(trackDups_PrepResps_);
         return;
       }
     }
@@ -460,7 +460,7 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::clearDupsEntry
   std::fill(td.recv_replicas_.begin()+(idx*totreplicas_),
       td.recv_replicas_.begin()+(idx+1)*totreplicas_,
       0);
-  trackDups_PrepResps_.recv_views_[idx] = td.empty_id;
+  td.recv_views_[idx] = td.empty_id;
 }
 
 }

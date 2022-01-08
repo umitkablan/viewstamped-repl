@@ -223,7 +223,7 @@ TEST(CoreTest, LeaderPrepareTimeouts)
     ASSERT_EQ(4, recv.size());
     for (int i = 0; i < recv.size(); ++i) {
       ASSERT_EQ(i+1, recv[i].first);
-      ASSERT_EQ(0, recv[i].second.op);
+      ASSERT_EQ(-1, recv[i].second.op);
     }
     recv.clear();
   }
@@ -265,7 +265,69 @@ TEST(CoreTest, LeaderPrepareTimeouts)
   cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // replica:1 replies
   ASSERT_EQ(0, cr.CommitID());
   ASSERT_EQ(0, cr.OpID());
+
+  cr.ConsumeReply(3, MsgPrepareResponse { "", 0 });
+  {
+    cr.ConsumeMsg(MsgClientOp { 1278, "zz=ttt" });
+    ASSERT_EQ(4, recv.size());
+    for (int i = 0; i < recv.size(); ++i) {
+      ASSERT_EQ(i+1, recv[i].first);
+      ASSERT_EQ(1, recv[i].second.op);
+    }
+    recv.clear();
+  }
+  cr.ConsumeReply(2, MsgPrepareResponse { "", 1 });
+  ASSERT_EQ(0, cr.CommitID());
+  cr.ConsumeReply(3, MsgPrepareResponse { "", 1 });
+  ASSERT_EQ(1, cr.CommitID());
 }
+
+TEST(CoreTest, MissingLogs)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr1(3, 1, msgdispatcher, sm); // 0 is leader by default, 1 will be follower
+
+  const int view = 6, leader = 0;
+  std::vector<std::pair<int, MsgGetMissingLogs>> missing_log_reqs;
+  EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgGetMissingLogs&>())).WillRepeatedly(
+    [&missing_log_reqs, view](int to, const MsgGetMissingLogs& gml) {
+      ASSERT_EQ(view, gml.view);
+      missing_log_reqs.push_back(std::make_pair(to, gml));
+    });
+
+  {
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 0, -1, "xz=efr" });
+    ASSERT_EQ(0, missing_log_reqs.size());
+  }
+  ASSERT_EQ(0, cr1.OpID());
+  {
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 0, 0, "" });
+    ASSERT_EQ(0, missing_log_reqs.size());
+  }
+  ASSERT_EQ(0, cr1.CommitID());
+  ASSERT_EQ(0, cr1.OpID());
+
+  {
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 4, 0, "xzz=efrs" });
+    ASSERT_EQ(0, missing_log_reqs.size());
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 5, 4, "azx=342" });
+    ASSERT_EQ(0, missing_log_reqs.size());
+  }
+  ASSERT_EQ(4, cr1.CommitID());
+  ASSERT_EQ(5, cr1.OpID());
+
+  {
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 7, 6, "xzz=efrs" });
+    ASSERT_EQ(1, missing_log_reqs.size());
+    ASSERT_EQ(leader, missing_log_reqs[0].first);
+    ASSERT_EQ(4, missing_log_reqs[0].second.my_last_commit);
+    cr1.ConsumeReply(leader, MsgMissingLogsResponse { "", {7, "ss=45"}, {{6, "ee=dd"}} });
+  }
+  ASSERT_EQ(6, cr1.CommitID());
+  ASSERT_EQ(7, cr1.OpID());
+}
+
 
 TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 {
@@ -428,6 +490,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
         if (from == to) return 0;
         return (from == 4 && to != 0) || (from == 0 && to != 4); //from == 4 || from == 0;
       });
+  vsreps[4].ConsumeMsg(MsgClientOp { 1688, "xt=55" });
   for (int i = 0; i < 100; ++i) {
     if (vsreps[1].View() > 5 && vsreps[1].GetStatus() == Status::Normal
         && vsreps[2].View() > 5 && vsreps[2].GetStatus() == Status::Normal
@@ -443,9 +506,19 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(6, vsreps[3].View());
   ASSERT_EQ(Status::Normal, vsreps[3].GetStatus());
 
+  vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=75" });
+  for (int i = 0; i < 21; ++i) {
+    if (vsreps[1].OpID() == vsreps[1].CommitID())
+      break;
+    ASSERT_LT(i, 20);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  ASSERT_EQ(1, vsreps[1].CommitID());
+
   // Make replica:4-0 non-isolated again
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
+  vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=69" });
   for (int i = 0; i < 20; ++i) {
     if (vsreps[0].View() > 5 && vsreps[0].GetStatus() == Status::Normal
         && vsreps[4].View() > 5 && vsreps[4].GetStatus() == Status::Normal)
@@ -456,6 +529,13 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(Status::Normal, vsreps[0].GetStatus());
   ASSERT_EQ(6, vsreps[4].View());
   ASSERT_EQ(Status::Normal, vsreps[4].GetStatus());
+  // Check new ops propagated correctly
+  for (int i = 0; i < 21; ++i) {
+    if (vsreps[0].OpID() == 2 && vsreps[4].OpID() == 2)
+      break;
+    ASSERT_LT(i, 20);
+    sleep_for(std::chrono::milliseconds(50));
+  }
 
   //
   // SPLIT BRAIN --------------------------------------------------
@@ -467,6 +547,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   buggynw.SetDecideFun(
     [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
       if (from == to) return 0;
+      if ((from == 1 && to == 2) || (from == 2 && to == 1)) return 0;
       if ((from == 1 && to != 2) || (from == 2 && to != 1)) return 1;
       return (to == 2) || (to == 1);
     });
@@ -491,19 +572,35 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(Status::Normal, vsreps[2].GetStatus());
 
   // Separated leader should not be able to commit an op without consensus followers
+  ASSERT_EQ(2, vsreps[2].CommitID());
+  ASSERT_EQ(2, vsreps[2].CommitID());
   vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=987" });
-  ASSERT_EQ(1, vsreps[1].OpID());
-  ASSERT_EQ(0, vsreps[1].CommitID());
+  ASSERT_EQ(3, vsreps[1].OpID());
+  ASSERT_EQ(2, vsreps[1].CommitID());
   for (int i = 0; i < 21; ++i) {
     if (vsreps[1].OpID() == vsreps[1].CommitID())
       break;
     ASSERT_LT(i, 20);
     sleep_for(std::chrono::milliseconds(50));
   }
-  ASSERT_EQ(0, vsreps[1].OpID());
-  ASSERT_EQ(0, vsreps[1].CommitID());
-  ASSERT_EQ(0, vsreps[2].OpID());
-  ASSERT_EQ(0, vsreps[2].CommitID());
+  ASSERT_EQ(2, vsreps[1].OpID());
+  ASSERT_EQ(2, vsreps[1].CommitID());
+  ASSERT_LT(vsreps[2].OpID(), 4); // could be 2 or 3
+  ASSERT_EQ(2, vsreps[2].CommitID());
+  // Meanwhile the island of leader should be able to persist ops
+  vsreps[3].ConsumeMsg(MsgClientOp { 1571, "y=156" });
+  ASSERT_EQ(3, vsreps[3].OpID());
+  ASSERT_EQ(2, vsreps[3].CommitID());
+  for (int i = 0; i < 21; ++i) {
+    if (vsreps[3].OpID() == vsreps[3].CommitID())
+      break;
+    ASSERT_LT(i, 20);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  ASSERT_EQ(3, vsreps[3].OpID());
+  ASSERT_EQ(3, vsreps[3].CommitID());
+  ASSERT_EQ(3, vsreps[0].OpID());
+  ASSERT_EQ(3, vsreps[4].OpID());
 
   // --------------------------------------------------------------
   // Make replica:1-2 non-isolated again (join them to majority island)
@@ -520,6 +617,17 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(Status::Normal, vsreps[1].GetStatus());
   ASSERT_EQ(8, vsreps[2].View());
   ASSERT_EQ(Status::Normal, vsreps[2].GetStatus());
+
+  // Check that re-joined island gets ops successfully
+  for (int i = 0; i < 21; ++i) {
+    if (vsreps[1].OpID() == 3 && vsreps[1].CommitID() == 3
+        && vsreps[2].OpID() == 3 && vsreps[2].CommitID() == 3)
+      break;
+    ASSERT_LT(i, 20);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  ASSERT_EQ(3, vsreps[1].CommitID());
+  ASSERT_EQ(3, vsreps[2].CommitID());
 }
 
 }

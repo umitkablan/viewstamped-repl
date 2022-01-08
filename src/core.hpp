@@ -28,9 +28,12 @@ public:
     int ConsumeMsg(int from, const MsgDoViewChange&);
     MsgStartViewResponse ConsumeMsg(int from, const MsgStartView&);
     MsgPrepareResponse ConsumeMsg(int from, const MsgPrepare&);
+    MsgMissingLogsResponse
+        ConsumeMsg(int from, const MsgGetMissingLogs&);
 
     int ConsumeReply(int from, const MsgPrepareResponse&);
     int ConsumeReply(int from, const MsgStartViewResponse&);
+    int ConsumeReply(int from, const MsgMissingLogsResponse&);
 
     int View() const { return view_; }
     Status GetStatus() const { return status_; }
@@ -50,8 +53,11 @@ private:
     Status status_;
     int op_;
     int commit_;
+    std::vector<std::pair<int,std::string>> logs_;
+    std::string op_str_;
 
     bool prepare_sent_;
+    bool has_missing_logs_;
     unsigned latest_healthtick_received_;
     unsigned healthcheck_tick_;
 
@@ -69,6 +75,8 @@ private:
     trackDups trackDups_SVCs_;
     trackDups trackDups_DVCs_;
     trackDups trackDups_PrepResps_;
+    trackDups trackDups_SVResps_;
+    std::vector<MsgStartViewResponse> svResps_;
 
     std::pair<bool,int>
     checkDuplicate(trackDups&, int from, int view);

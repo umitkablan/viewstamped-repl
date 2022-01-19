@@ -377,6 +377,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   // make replica:0 isolated (receive & send) -> Changes to view:1 automatically
   // --------------------------------------------------------------
+  cout << "make replica:0 isolated (receive & send) -> Changes to view:1 automatically" << endl;
   buggynw.SetDecideFun(
     [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
       if (from == to) return 0;
@@ -410,6 +411,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_THAT(cnt, ::testing::Gt(3));
 
   // Make replica:0 non-isolated again
+  cout << "Make replica:0 non-isolated again" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   for (int i = 0; i < 40; ++i) {
@@ -422,6 +424,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   // make replica:1 isolated (receive-only, block outgoing messages)
   // --------------------------------------------------------------
+  cout << "make replica:1 isolated (receive-only, block outgoing messages)" << endl;
+
   buggynw.SetDecideFun(
     [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
       if (from == to) return 0;
@@ -447,6 +451,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_THAT(cnt, ::testing::Gt(3));
 
   // make replica:1 messages pass to destinations, again
+  cout << "make replica:1 messages pass to destinations, again" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   // since replica:1 was isolated receive-only, it should have correct view ASAP, no poll needed
@@ -456,6 +461,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   // make replica:2-3 isolated (receive & send) -> Changes to view:4 automatically
   // --------------------------------------------------------------
+  cout << "make replica:2-3 isolated (receive & send) -> Changes to view:4 automatically" << endl;
   buggynw.SetDecideFun(
     [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
       if (from == to) return 0;
@@ -477,6 +483,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(Status::Normal, vsreps[4].GetStatus());
 
   // Make replica:2-3 non-isolated again
+  cout << "Make replica:2-3 non-isolated again" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   for (int i = 0; i < 20; ++i) {
@@ -493,6 +500,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   // make replica:4-0 isolated: block send but not between 0 and 4
   // --------------------------------------------------------------
+  cout << "make replica:4-0 isolated: block send but not between 0 and 4" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
         if (from == to) return 0;
@@ -527,6 +535,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=69" });
+  ASSERT_EQ(2, vsreps[1].OpID());
+  ASSERT_EQ(1, vsreps[1].CommitID());
   for (int i = 0; i < 20; ++i) {
     if (vsreps[0].View() > 5 && vsreps[0].GetStatus() == Status::Normal
         && vsreps[4].View() > 5 && vsreps[4].GetStatus() == Status::Normal)
@@ -636,6 +646,16 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   }
   ASSERT_EQ(3, vsreps[1].CommitID());
   ASSERT_EQ(3, vsreps[2].CommitID());
+
+  ASSERT_EQ(4, vsreps[0].GetCommittedLogs().size());
+  {
+    auto&& logs = vsreps[1].GetCommittedLogs();
+    ASSERT_EQ(4, logs.size());
+    ASSERT_EQ(std::make_pair(0, std::string("x=12")), logs[0]);
+    ASSERT_EQ(std::make_pair(1, std::string("xu=75")), logs[1]);
+    ASSERT_EQ(std::make_pair(2, std::string("xu=69")), logs[2]);
+    ASSERT_EQ(std::make_pair(3, std::string("y=156")), logs[3]);
+  }
 }
 
 }

@@ -39,6 +39,8 @@ public:
     Status GetStatus() const { return status_; }
     int CommitID() const { return commit_; }
     int OpID() const { return op_; }
+    const std::vector<std::pair<int, std::string>>&
+        GetCommittedLogs() const { return logs_; }
 
     void HealthTimeoutTicked();
 

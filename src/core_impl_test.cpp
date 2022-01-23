@@ -208,7 +208,7 @@ public:
   {
     enqueueTask(pts_, [from, to, ml, this]() {
       auto ret = callDecideSync(from, to, TstMsgType::GetMissingLogs, ml.view);
-      MsgMissingLogsResponse mlresp { "err mlllogs" };
+      MsgMissingLogsResponse mlresp { ml.view, "err mlllogs" };
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
         mlresp = engines_[to]->ConsumeMsg(from, ml);

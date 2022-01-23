@@ -65,6 +65,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   if (cnt > totreplicas_ / 2) { // include self...
     status_ = Status::Change;
     view_ = msgsvc.view;
+    op_ = commit_;
     healthcheck_tick_ = latest_healthtick_received_;
     dispatcher_.SendMsg(msgsvc.view % totreplicas_, MsgDoViewChange { msgsvc.view });
   } else if (msgsvc.view == view_ + 1
@@ -97,12 +98,13 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 
   cout << replica_ << ":" << view_ << "<-" << from << " (DoVC) consensus[" << cnt << "] for v:" << dvc.view << endl;
   view_ = dvc.view;
+  op_ = commit_;
   status_ = Status::Normal;
 
   healthcheck_tick_ = latest_healthtick_received_;
   for (int i = 0; i < totreplicas_; ++i) {
     if (i != replica_)
-      dispatcher_.SendMsg(i, MsgStartView { dvc.view });
+      dispatcher_.SendMsg(i, MsgStartView { dvc.view, commit_ });
   }
 
   return 0;
@@ -116,11 +118,11 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   if (view_ < sv.view) {
     cout << replica_ << ":" << view_ << " (SV) my view is smaller than received v:" << sv.view << endl;
     op_ = commit_;
-    op_str_.clear();
   }
 
   if (view_ <= sv.view) {
-    cout << replica_ << ":" << view_ << "<-" << from << " (SV) setting v:" << sv.view << endl;
+    if (view_ < sv.view)
+      cout << replica_ << ":" << view_ << "<-" << from << " (SV) setting v:" << sv.view << endl;
     healthcheck_tick_ = latest_healthtick_received_;
     view_ = sv.view;
     status_ = Status::Normal;
@@ -130,22 +132,20 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return MsgStartViewResponse { "My view is bigger than received v:" + std::to_string(sv.view) };
   }
 
-  std::vector<std::pair<int,std::string>> missing_logs;
-  if (op_ != commit_ && op_ > sv.last_commit)
-    missing_logs.push_back(std::make_pair(op_, op_str_));
+  std::vector<std::pair<int, MsgClientOp>> missing_logs;
   for (int i=logs_.size(); i-->0;)
     if (logs_[i].first > sv.last_commit)
       missing_logs.push_back(logs_[i]);
     else break;
 
-  return MsgStartViewResponse {"",  commit_, op_, std::move(missing_logs)};
+  return MsgStartViewResponse { "", commit_, std::move(missing_logs) };
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     const MsgClientOp& msg)
 {
-  cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.opstr
+  cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.toString()
        << " commit:" << op_ << "/" << commit_ << endl;
   if ((view_ % totreplicas_) != replica_) {
     dispatcher_.SendMsg(view_ % totreplicas_, msg);
@@ -155,12 +155,12 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   if (op_ != commit_)
     return -1;
   ++op_;
-  op_str_ = msg.opstr;
+  cliop_ = msg;
   latest_healthtick_received_ = healthcheck_tick_;
   prepare_sent_ = true;
   for (int i=0; i<totreplicas_; ++i)
     if (i != replica_)
-      dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, msg.opstr });
+      dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, msg });
 
   return 0;
 }
@@ -170,10 +170,6 @@ MsgPrepareResponse
 ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     int from, const MsgPrepare& msgpr)
 {
-  if (view_ < msgpr.view) {
-    op_ = commit_;
-    op_str_.clear();
-  }
   if ((view_ % totreplicas_) == replica_ && view_ == msgpr.view) {
     return MsgPrepareResponse { "I am not a follower!", msgpr.op };
   }
@@ -185,8 +181,9 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     cout << replica_ << ":" << view_ << "<-" << from << " (PREP) I am OUTDATED v:" << msgpr.view << endl;
     view_ = msgpr.view;
     status_ = Status::Normal;
+    op_ = commit_;
   } else if (view_ > msgpr.view) {
-    ret.err = "skipping old PREP v:" + std::to_string(msgpr.view);
+    ret.err = "skipping old PREP v:" + std::to_string(msgpr.view) + " opstr:" + msgpr.cliop.opstr;
     return ret;
   }
 
@@ -194,12 +191,16 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   if (msgpr.commit == op_) {
     if (op_ > commit_) {
       cout << replica_ << ":" << view_ << "<-" << from << " (PREP) committing op:" << op_
-           << " op_str: " << op_str_ << endl;
-      logs_.push_back(std::make_pair(op_, op_str_));
+           << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
+      logs_.push_back(std::make_pair(op_, cliop_));
       commit_ = op_;
     }
-    op_str_ = std::move(msgpr.opstr);
-    op_ = msgpr.op;
+
+    if (msgpr.op > commit_) {
+      cliop_ = std::move(msgpr.cliop);
+      op_ = msgpr.op;
+    }
+
   } else if (commit_ < msgpr.commit) { // if (has_missing_logs_)
     ret.err = "My logs are not up-to-date " + std::to_string(msgpr.commit) + " >< "
               + std::to_string(op_) + "/" + std::to_string(commit_);
@@ -221,8 +222,6 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   auto [isdup, idx] = checkDuplicate(trackDups_SVResps_, from, svresp.last_commit);
   if (isdup)
     return 0; // double sent
-  // cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) msg.op:"
-  // << presp.op << " op_:" << op_ << endl;
 
   svResps_[from] = svresp;
 
@@ -231,15 +230,17 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     trackDups_SVResps_.recv_replicas_.begin()+(idx+1)*totreplicas_,
     1);
 
+  cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) consensus[" << cnt << "] "
+       << op_ << "/" << commit_ << " lastcommit:" << svresp.last_commit << " missing.sz:"
+       << svresp.missing_entries.size() << endl;
   if (cnt < totreplicas_ / 2) // is consensus not achieved?
     return 0;
 
-  auto maxop = -2, maxidx = -1;
+  auto maxcommit = -2, maxidx = -1;
   for (int i = 0; i < totreplicas_; ++i) {
     if (trackDups_SVResps_.recv_replicas_[i + idx * totreplicas_]) {
-      // if (maxcommit < svResps_[i].last_commit)
-      if (maxop < svResps_[i].last_op) {
-        maxop = svResps_[i].last_op;
+      if (maxcommit < svResps_[i].last_commit) {
+        maxcommit = svResps_[i].last_commit;
         maxidx = i;
       }
     }
@@ -252,7 +253,12 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     if (!r.missing_entries.empty())
       op_ = commit_ = r.missing_entries[0].first;
     for (int i=r.missing_entries.size(); i-->0; )
-      logs_.push_back(std::move(r.missing_entries[i]));
+    {
+      auto&& cliop = r.missing_entries[i];
+      cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) committing op:" << op_
+           << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
+      logs_.push_back(std::move(cliop));
+    }
   }
 
   return 0;
@@ -263,14 +269,12 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     int from, const MsgPrepareResponse& presp)
 {
   if (!presp.err.empty()) {
-    cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.op:" << presp.op
-         << " msg.err:" << presp.err << ((view_ % totreplicas_) == replica_ ? " [*]" : "")
-         << endl;
+    cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.err:" << presp.err << endl;
     return -2;
   }
   if ((view_ % totreplicas_) != replica_) {
-    cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.op:" << presp.op
-         << " I am NOT the Leader" << endl;
+    cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) I am NOT the Leader! msg.op:"
+         << presp.op << endl;
     return -1;
   }
   if (op_ != presp.op) {
@@ -300,11 +304,10 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     return 0; // already committed
   }
 
-  cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) committing op_:" << op_
-       << " op_str_:" << op_str_ << endl;
-  logs_.push_back(std::make_pair(op_, op_str_));
+  cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) committing consensus[" << cnt
+    << "] op_:" << op_ << " cliop:" << cliop_.toString() << " sz:" << logs_.size() << endl;
+  logs_.push_back(std::make_pair(op_, cliop_));
   commit_ = op_;
-  op_str_.clear();
 
   return 0;
 }
@@ -316,7 +319,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 {
   cout << replica_ << ":" << view_ << "<-" << from << " (GetML) msg.last_commit:"
     << msgml.my_last_commit << endl;
-  MsgMissingLogsResponse ret{"", std::make_pair(op_,op_str_)};
+  MsgMissingLogsResponse ret{view_, "", std::make_pair(op_,cliop_)};
   if ((view_ % totreplicas_) != replica_) {
     ret.err = "I am not the leader " + std::to_string(replica_) + ":" + std::to_string(view_);
     return ret;
@@ -351,7 +354,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
        << " op to " << mlresp.op_log.first << endl;
   commit_ = logs_.back().first;
   op_ = mlresp.op_log.first;
-  op_str_ = std::move(mlresp.op_log.second);
+  cliop_ = std::move(mlresp.op_log.second);
 
   return 0;
 }
@@ -372,14 +375,13 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
         cout << replica_ << ":" << view_ << " (TICK) reverting the op:" << op_
             << " to commit:" << commit_ << endl;
         op_ = commit_; // give up, revert the op
-        op_str_.clear();
         clearDupsEntry(trackDups_PrepResps_);
         return;
       }
     }
     for (int i = 0; i < totreplicas_; ++i) {
       if (i != replica_)
-        dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, "" }); // not op_ but commit_
+        dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, MsgClientOp{} });
     }
     return;
 

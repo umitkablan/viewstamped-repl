@@ -39,7 +39,7 @@ public:
     Status GetStatus() const { return status_; }
     int CommitID() const { return commit_; }
     int OpID() const { return op_; }
-    const std::vector<std::pair<int, std::string>>&
+    const std::vector<std::pair<int, MsgClientOp>>&
         GetCommittedLogs() const { return logs_; }
 
     void HealthTimeoutTicked();
@@ -55,8 +55,8 @@ private:
     Status status_;
     int op_;
     int commit_;
-    std::vector<std::pair<int,std::string>> logs_;
-    std::string op_str_;
+    std::vector<std::pair<int, MsgClientOp>> logs_;
+    MsgClientOp cliop_;
 
     bool prepare_sent_;
     unsigned latest_healthtick_received_;

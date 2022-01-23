@@ -9,13 +9,21 @@ namespace vsrepl {
 struct MsgClientOp {
     int clientid;
     std::string opstr;
+    uint64_t cliopid; // prevents opstr to re-execute together with clientid
+
+    std::string toString() const {
+        return std::to_string(clientid) + "/" + std::to_string(cliopid) + "/" + opstr;
+    }
+    bool operator==(const MsgClientOp& o) const {
+        return o.clientid == clientid && o.opstr == opstr && o.cliopid == cliopid;
+    }
 };
 
 struct MsgPrepare {
     int view;
     int op;
     int commit;
-    std::string opstr;
+    MsgClientOp cliop;
 };
 
 struct MsgStartViewChange {
@@ -29,15 +37,14 @@ struct MsgDoViewChange {
 // Leader's command to all possible Followers
 struct MsgStartView {
     int view;
-    unsigned last_commit;
+    int last_commit;
 };
 
 // Followers' response to the Leader candidate
 struct MsgStartViewResponse {
     std::string err;
     int last_commit;
-    int last_op;
-    std::vector<std::pair<int, std::string>> missing_entries;
+    std::vector<std::pair<int, MsgClientOp>> missing_entries;
 };
 
 struct MsgPrepareResponse {
@@ -51,9 +58,11 @@ struct MsgGetMissingLogs {
 };
 
 struct MsgMissingLogsResponse {
+    int view;
     std::string err;
-    std::pair<int, std::string> op_log;
-    std::vector<std::pair<int, std::string>> comitted_logs;
+    std::pair<int, MsgClientOp> op_log;
+    std::vector<std::pair<int, MsgClientOp>> comitted_logs;
+    unsigned hashoflast;
 };
 
 }

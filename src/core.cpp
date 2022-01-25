@@ -103,7 +103,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   cout << replica_ << ":" << view_ << "<-" << from << " (DoVC) consensus[" << cnt << "] for v:" << dvc.view << endl;
   view_ = dvc.view;
   op_ = commit_;
-  status_ = Status::Normal;
+  // status_ = Status::Normal;
 
   healthcheck_tick_ = latest_healthtick_received_;
   for (int i = 0; i < totreplicas_; ++i) {
@@ -191,7 +191,8 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return ret;
   }
 
-  if (commit_ > msgpr.commit || (commit_ == msgpr.commit && msgpr.loghash != log_hash_)) {
+  if (!(msgpr.commit == -1 && msgpr.op == -1 && msgpr.loghash == 1)
+      && (commit_ > msgpr.commit || (commit_ == msgpr.commit && msgpr.loghash != log_hash_))) {
     cout << replica_ << ":" << view_ << "<-" << from << " (PREP) pop-back sz:" << logs_.size()
          << " commit:" << op_ << "/" << commit_
          << " msgpr.commit:" << msgpr.op << "/" << msgpr.commit
@@ -289,6 +290,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     }
     log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   }
+  status_ = Status::Normal;
 
   return 0;
 }
@@ -412,8 +414,12 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
       }
     }
     for (int i = 0; i < totreplicas_; ++i) {
-      if (i != replica_)
-        dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, log_hash_, MsgClientOp{} });
+      if (i != replica_) {
+        if (status_ == Status::Normal)
+          dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, log_hash_, MsgClientOp {} });
+        else
+          dispatcher_.SendMsg(i, MsgPrepare { view_, -1, -1, 1, MsgClientOp {} });
+      }
     }
     return;
 

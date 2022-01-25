@@ -684,7 +684,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps[4].ConsumeMsg(MsgClientOp { 1688, "xt=to4_isolated40_v4to6-002" });
   vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=75" });
   for (int i = 0; i < 21; ++i) {
-    if (vsreps[1].CommitID() > 1) // vsreps[1].OpID() == vsreps[1].CommitID()
+    if (vsreps[1].OpID() == vsreps[1].CommitID()) // vsreps[1].CommitID() > 1
       break;
     ASSERT_LT(i, 20);
     sleep_for(std::chrono::milliseconds(50));

@@ -156,7 +156,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return 0;
   }
 
-  if (op_ != commit_)
+  if (op_ != commit_ || status_ != Status::Normal) // failed, retry
     return -1;
   ++op_;
   cliop_ = msg;

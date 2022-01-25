@@ -13,7 +13,6 @@ enum class Status : char {
   Change,
 };
 
-
 template <typename TMsgDispatcher, typename TStateMachine>
 class ViewstampedReplicationEngine {
 public:
@@ -41,6 +40,7 @@ public:
     int OpID() const { return op_; }
     const std::vector<std::pair<int, MsgClientOp>>&
         GetCommittedLogs() const { return logs_; }
+    std::size_t GetHash() const noexcept { return log_hash_; }
 
     void HealthTimeoutTicked();
 
@@ -55,6 +55,7 @@ private:
     Status status_;
     int op_;
     int commit_;
+    std::size_t log_hash_;
     std::vector<std::pair<int, MsgClientOp>> logs_;
     MsgClientOp cliop_;
 

@@ -1,5 +1,8 @@
 #include "core.hpp"
 
+#include "hasher.hpp"
+
+#include <functional>
 #include <iostream>
 using std::cout;
 using std::endl;
@@ -19,6 +22,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicat
   , status_(Status::Normal)
   , op_(-1)
   , commit_(-1)
+  , log_hash_(0)
   , prepare_sent_(false)
   , latest_healthtick_received_(1)
   , healthcheck_tick_(1)
@@ -99,7 +103,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   cout << replica_ << ":" << view_ << "<-" << from << " (DoVC) consensus[" << cnt << "] for v:" << dvc.view << endl;
   view_ = dvc.view;
   op_ = commit_;
-  status_ = Status::Normal;
+  // status_ = Status::Normal;
 
   healthcheck_tick_ = latest_healthtick_received_;
   for (int i = 0; i < totreplicas_; ++i) {
@@ -129,7 +133,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   } else {
     cout << replica_ << ":" << view_ << " (SV) my view is bigger than received v:"
       << sv.view << "!! skipping..." << endl;
-    return MsgStartViewResponse { "My view is bigger than received v:" + std::to_string(sv.view) };
+    return MsgStartViewResponse { view_, "My view is bigger than received v:" + std::to_string(sv.view) };
   }
 
   std::vector<std::pair<int, MsgClientOp>> missing_logs;
@@ -138,7 +142,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
       missing_logs.push_back(logs_[i]);
     else break;
 
-  return MsgStartViewResponse { "", commit_, std::move(missing_logs) };
+  return MsgStartViewResponse { view_, "", commit_, std::move(missing_logs) };
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
@@ -152,7 +156,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return 0;
   }
 
-  if (op_ != commit_)
+  if (op_ != commit_ || status_ != Status::Normal) // failed, retry
     return -1;
   ++op_;
   cliop_ = msg;
@@ -160,7 +164,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   prepare_sent_ = true;
   for (int i=0; i<totreplicas_; ++i)
     if (i != replica_)
-      dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, msg });
+      dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, log_hash_, msg });
 
   return 0;
 }
@@ -188,12 +192,29 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   }
 
   healthcheck_tick_ = latest_healthtick_received_;
+  if (msgpr.commit == -1 && msgpr.op == -1 && msgpr.loghash == 1)
+    return ret;
+
+  if (commit_ > msgpr.commit || (commit_ == msgpr.commit && msgpr.loghash != log_hash_)) {
+    cout << replica_ << ":" << view_ << "<-" << from << " (PREP) pop-back sz:" << logs_.size()
+         << " commit:" << op_ << "/" << commit_
+         << " msgpr.commit:" << msgpr.op << "/" << msgpr.commit
+         << " msg.hash:" << msgpr.loghash << endl;
+    logs_.pop_back();
+    log_hash_ = mergeLogsHashes(logs_.begin(), logs_.end());
+    commit_ = -1;
+    if (!logs_.empty())
+      commit_ = logs_.back().first;
+    op_ = commit_;
+  }
+
   if (msgpr.commit == op_) {
     if (op_ > commit_) {
       cout << replica_ << ":" << view_ << "<-" << from << " (PREP) committing op:" << op_
-           << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
+           << " cliop:" << cliop_.toString() << " sz:" << logs_.size() << endl;
       logs_.push_back(std::make_pair(op_, cliop_));
       commit_ = op_;
+      log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
     }
 
     if (msgpr.op > commit_) {
@@ -201,12 +222,13 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
       op_ = msgpr.op;
     }
 
-  } else if (commit_ < msgpr.commit) { // if (has_missing_logs_)
+  } else if (commit_ < msgpr.commit || msgpr.commit != msgpr.op) {
     ret.err = "My logs are not up-to-date " + std::to_string(msgpr.commit) + " >< "
               + std::to_string(op_) + "/" + std::to_string(commit_);
     dispatcher_.SendMsg(view_ % totreplicas_, MsgGetMissingLogs { view_, commit_ });
   }
 
+  ret.op = op_;
   return ret;
 }
 
@@ -219,9 +241,11 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
         << " lastcommit:" << svresp.last_commit << "; I am not the Leader " << endl;
     return -1;
   }
-  auto [isdup, idx] = checkDuplicate(trackDups_SVResps_, from, svresp.last_commit);
+  auto [isdup, idx] = checkDuplicate(trackDups_SVResps_, from, svresp.view);
   if (isdup)
     return 0; // double sent
+  if (status_ == Status::Normal)
+    return 0;
 
   svResps_[from] = svresp;
 
@@ -252,14 +276,16 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     auto& r = svResps_[maxidx];
     if (!r.missing_entries.empty())
       op_ = commit_ = r.missing_entries[0].first;
-    for (int i=r.missing_entries.size(); i-->0; )
-    {
+    const auto cursz = logs_.size();
+    for (int i=r.missing_entries.size(); i-->0; ) {
       auto&& cliop = r.missing_entries[i];
       cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) committing op:" << op_
            << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
       logs_.push_back(std::move(cliop));
     }
+    log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   }
+  status_ = Status::Normal;
 
   return 0;
 }
@@ -308,6 +334,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     << "] op_:" << op_ << " cliop:" << cliop_.toString() << " sz:" << logs_.size() << endl;
   logs_.push_back(std::make_pair(op_, cliop_));
   commit_ = op_;
+  log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
 
   return 0;
 }
@@ -348,8 +375,10 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     return -2;
   }
 
+  auto cursz = logs_.size();
   for (int i=mlresp.comitted_logs.size(); i-->0; )
     logs_.push_back(mlresp.comitted_logs[i]);
+  log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   cout << replica_ << ":" << view_ << "<-" << from << " (RespML) commit_ to " << logs_.back().first
        << " op to " << mlresp.op_log.first << endl;
   commit_ = logs_.back().first;
@@ -370,18 +399,13 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
       prepare_sent_ = false;
       return;
     }
-    if (op_ != commit_) {
-      if (diff > 3) {
-        cout << replica_ << ":" << view_ << " (TICK) reverting the op:" << op_
-            << " to commit:" << commit_ << endl;
-        op_ = commit_; // give up, revert the op
-        clearDupsEntry(trackDups_PrepResps_);
-        return;
-      }
-    }
     for (int i = 0; i < totreplicas_; ++i) {
-      if (i != replica_)
-        dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, MsgClientOp{} });
+      if (i != replica_) {
+        if (status_ == Status::Normal)
+          dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, op_, log_hash_, cliop_ });
+        else
+          dispatcher_.SendMsg(i, MsgPrepare { view_, -1, -1, 1, MsgClientOp {} });
+      }
     }
     return;
 

@@ -250,43 +250,34 @@ TEST(CoreTest, LeaderPrepareTimeouts)
     recv.clear();
   }
 
-  // Prepare timeouts and op is discarded
+  // Prepare timeouts and op is re-sent
   {
     cr.HealthTimeoutTicked();
-    ASSERT_EQ(0, recv.size());
-    ASSERT_EQ(-1, cr.CommitID());
-    ASSERT_EQ(-1, cr.OpID());
-  }
-
-  //
-  // Successful case with challenges
-  //
-
-  {
-    cr.ConsumeMsg(MsgClientOp { 1278, "xy=ert" });
     ASSERT_EQ(4, recv.size());
     for (int i = 0; i < recv.size(); ++i) {
-      ASSERT_EQ(i+1, recv[i].first);
-      ASSERT_EQ(0, recv[i].second.op);
+      ASSERT_EQ(i + 1, recv[i].first);
+      ASSERT_EQ(-1, recv[i].second.op);
     }
     recv.clear();
+    ASSERT_EQ(-1, cr.CommitID());
+    ASSERT_EQ(0, cr.OpID());
   }
 
   cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies
-  ASSERT_EQ(-1, cr.CommitID());
+  ASSERT_EQ(0, cr.CommitID());
   ASSERT_EQ(0, cr.OpID());
 
-  { // When ClientOp is received before Tick we optimize Prepare's
-    cr.HealthTimeoutTicked();
-    ASSERT_EQ(0, recv.size());
-    ASSERT_EQ(-1, cr.CommitID());
-  }
-
   cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies again
-  ASSERT_EQ(-1, cr.CommitID());
+  ASSERT_EQ(0, cr.CommitID());
   cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // replica:1 replies
   ASSERT_EQ(0, cr.CommitID());
   ASSERT_EQ(0, cr.OpID());
+
+  // { // When ClientOp is received before Tick we optimize Prepare's
+  //   cr.HealthTimeoutTicked();
+  //   ASSERT_EQ(0, recv.size());
+  //   ASSERT_EQ(-1, cr.CommitID());
+  // }
 
   cr.ConsumeReply(3, MsgPrepareResponse { "", 0 });
   {
@@ -497,14 +488,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
     sleep_for(std::chrono::milliseconds(50));
   }
   // Op & CommitID is not 0+1 since replica:0 is isolated and cannot receive PrepareResponses
-  for (int i = 0; i < 21; ++i) {
-    if (vsreps[0].OpID() == vsreps[0].CommitID())
-      break;
-    ASSERT_LT(i, 20);
-    sleep_for(std::chrono::milliseconds(50));
-  }
   ASSERT_EQ(0, vsreps[0].CommitID());
-  ASSERT_EQ(0, vsreps[0].OpID());
+  ASSERT_EQ(1, vsreps[0].OpID());
 
   int cnt = 0;
   for (const auto& rep : vsreps) {
@@ -763,18 +748,15 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // Separated leader should not be able to commit an op without consensus followers
   ASSERT_EQ(3, vsreps[2].CommitID());
   ASSERT_EQ(3, vsreps[2].CommitID());
-  vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=987" });
+  vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=to1_separated12_v6to8" });
   ASSERT_EQ(4, vsreps[1].OpID());
   ASSERT_EQ(3, vsreps[1].CommitID());
   for (int i = 0; i < 21; ++i) {
-    if (vsreps[1].OpID() == vsreps[1].CommitID())
+    if (vsreps[2].OpID() == 4)
       break;
     ASSERT_LT(i, 20);
     sleep_for(std::chrono::milliseconds(50));
   }
-  ASSERT_EQ(3, vsreps[1].OpID());
-  ASSERT_EQ(3, vsreps[1].CommitID());
-  ASSERT_LT(vsreps[2].OpID(), 5);
   ASSERT_EQ(3, vsreps[2].CommitID());
   // Meanwhile the island of leader should be able to persist ops
   vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=to1_isolated12_v6to8-1232" });

@@ -222,7 +222,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
       op_ = msgpr.op;
     }
 
-  } else if (commit_ < msgpr.commit) { // if (has_missing_logs_)
+  } else if (commit_ < msgpr.commit || msgpr.commit != msgpr.op) {
     ret.err = "My logs are not up-to-date " + std::to_string(msgpr.commit) + " >< "
               + std::to_string(op_) + "/" + std::to_string(commit_);
     dispatcher_.SendMsg(view_ % totreplicas_, MsgGetMissingLogs { view_, commit_ });
@@ -243,6 +243,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   auto [isdup, idx] = checkDuplicate(trackDups_SVResps_, from, svresp.view);
   if (isdup)
     return 0; // double sent
+  if (status_ == Status::Normal)
+    return 0;
 
   svResps_[from] = svresp;
 
@@ -396,19 +398,10 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
       prepare_sent_ = false;
       return;
     }
-    if (op_ != commit_) {
-      if (diff > 3) {
-        cout << replica_ << ":" << view_ << " (TICK) reverting the op:" << op_
-            << " to commit:" << commit_ << endl;
-        op_ = commit_; // give up, revert the op
-        clearDupsEntry(trackDups_PrepResps_);
-        return;
-      }
-    }
     for (int i = 0; i < totreplicas_; ++i) {
       if (i != replica_) {
         if (status_ == Status::Normal)
-          dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, log_hash_, MsgClientOp {} });
+          dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, op_, log_hash_, MsgClientOp {} });
         else
           dispatcher_.SendMsg(i, MsgPrepare { view_, -1, -1, 1, MsgClientOp {} });
       }

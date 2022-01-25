@@ -149,7 +149,7 @@ template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     const MsgClientOp& msg)
 {
-  cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " cliop:" << msg.toString()
+  cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.toString()
        << " commit:" << op_ << "/" << commit_ << endl;
   if ((view_ % totreplicas_) != replica_) {
     dispatcher_.SendMsg(view_ % totreplicas_, msg);
@@ -204,16 +204,6 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
       commit_ = logs_.back().first;
     op_ = commit_;
   }
-
-  // if (msgpr.loghash != log_hash_) {
-  //   cout << replica_ << ":" << view_ << "<-" << from << " v:" << msgpr.view
-  //        << " my commit: " << commit_ << " hash:" << log_hash_
-  //        << " != msgpr.commit:" << msgpr.commit
-  //        << " msgpr.hash:" << msgpr.loghash << " resetting my commit!!" << endl;
-  //   commit_ = msgpr.commit;
-  //   while (msgpr.commit > logs_.back().first)
-  //     logs_.pop_back();
-  // }
 
   healthcheck_tick_ = latest_healthtick_received_;
   if (msgpr.commit == op_) {

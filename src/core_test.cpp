@@ -334,7 +334,6 @@ TEST(CoreTest, MissingLogs)
   }
   ASSERT_EQ(0, cr1.CommitID());
   ASSERT_EQ(0, cr1.OpID());
-  ASSERT_EQ(593537993421075790ull, cr1.GetHash());
 
   {
     cr1.ConsumeMsg(leader, MsgPrepare { view, 4, 0, 593537993421075790ull, MsgClientOp { 1237, "xzz=efrs" } });
@@ -344,7 +343,6 @@ TEST(CoreTest, MissingLogs)
     cr1.ConsumeMsg(leader, MsgPrepare { view, 5, 4, 14974115470896151948ull, MsgClientOp { 1237, "azx=342" } });
     ASSERT_EQ(4, cr1.CommitID());
     ASSERT_EQ(5, cr1.OpID());
-    ASSERT_EQ(14974115470896151948ull, cr1.GetHash());
     ASSERT_EQ(0, missing_log_reqs.size());
   }
   ASSERT_EQ(4, cr1.CommitID());
@@ -418,7 +416,6 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow2)
   cr0.ConsumeMsg(leader_cur, MsgPrepare { view_cur, 0, -1, 0, MsgClientOp { 1445, "to0=x", 1 } });
   cr0.ConsumeReply(leader_cur, MsgPrepareResponse { "", 0 }); // leader:0 will persist
   ASSERT_EQ(0, cr0.CommitID());
-  ASSERT_EQ(16509394309380172938ull, cr0.GetHash());
   ASSERT_EQ(0, missing_log_reqs.size());
   // however, as leader_next doesn't know about this commit, it should be reverted
   cr0.ConsumeMsg(leader_next, MsgPrepare { view_next, 1, 0, 6747, MsgClientOp { 123, "to1=y", 2 } });
@@ -514,8 +511,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_THAT(cnt, ::testing::Gt(3));
 
   vsreps[0].ConsumeMsg(MsgClientOp { 1212, "x=to0_isolated0_v1-1314" });
-  // Make replica:0 re-joined
-  cout << "*** Make replica:0 re-joined" << endl;
+  // re-join replica:0
+  cout << "*** re-join replica:0" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   for (int i = 0; i < 40; ++i) {
@@ -641,8 +638,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(4, vsreps[4].View());
   ASSERT_EQ(Status::Normal, vsreps[4].GetStatus());
 
-  // Make replica:2-3 re-joined
-  cout << "*** Make replica:2-3 re-joined" << endl;
+  // re-join replica:2-3
+  cout << "*** re-join replica:2-3" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   for (int i = 0; i < 20; ++i) {
@@ -698,8 +695,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   }
   ASSERT_EQ(2, vsreps[1].CommitID());
 
-  // Make replica:4-0 re-joined
-  cout << "*** Make replica:4-0 re-joined" << endl;
+  // re-join replica:4-0
+  cout << "*** re-join replica:4-0" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=to1_joining40_beforeisolating12_v6-004" });
@@ -792,9 +789,9 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(4, vsreps[0].OpID());
   ASSERT_EQ(4, vsreps[4].OpID());
   // --------------------------------------------------------------
-  // Make replica:1-2 re-joined (join them to majority island)
+  // re-join replica:1-2 (join them to majority island)
   // --------------------------------------------------------------
-  cout << "*** Make replica:1-2 non-isolated again (join them to majority island)" << endl;
+  cout << "*** re-join replica:1-2 (join them to majority island)" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
   for (int i = 0; i < 20; ++i) {

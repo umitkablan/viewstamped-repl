@@ -191,8 +191,11 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return ret;
   }
 
-  if (!(msgpr.commit == -1 && msgpr.op == -1 && msgpr.loghash == 1)
-      && (commit_ > msgpr.commit || (commit_ == msgpr.commit && msgpr.loghash != log_hash_))) {
+  healthcheck_tick_ = latest_healthtick_received_;
+  if (msgpr.commit == -1 && msgpr.op == -1 && msgpr.loghash == 1)
+    return ret;
+
+  if (commit_ > msgpr.commit || (commit_ == msgpr.commit && msgpr.loghash != log_hash_)) {
     cout << replica_ << ":" << view_ << "<-" << from << " (PREP) pop-back sz:" << logs_.size()
          << " commit:" << op_ << "/" << commit_
          << " msgpr.commit:" << msgpr.op << "/" << msgpr.commit
@@ -205,7 +208,6 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     op_ = commit_;
   }
 
-  healthcheck_tick_ = latest_healthtick_received_;
   if (msgpr.commit == op_) {
     if (op_ > commit_) {
       cout << replica_ << ":" << view_ << "<-" << from << " (PREP) committing op:" << op_

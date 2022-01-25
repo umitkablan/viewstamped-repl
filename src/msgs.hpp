@@ -1,6 +1,9 @@
 #ifndef TSTAMPED_MSGS_INCLUDED_
 #define TSTAMPED_MSGS_INCLUDED_ 1
 
+#include "msgs.hpp"
+
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -14,8 +17,15 @@ struct MsgClientOp {
     std::string toString() const {
         return std::to_string(clientid) + "/" + std::to_string(cliopid) + "/" + opstr;
     }
-    bool operator==(const MsgClientOp& o) const {
+    bool operator==(const vsrepl::MsgClientOp& o) const noexcept {
         return o.clientid == clientid && o.opstr == opstr && o.cliopid == cliopid;
+    }
+    std::size_t hash() const noexcept {
+        auto h1 = std::hash<int>{}(clientid);
+        auto h2 =  std::hash<std::string>{}(opstr);
+        auto h3 =  std::hash<uint64_t>{}(cliopid);
+        h1 ^= (h2 << 1);
+        return h1 ^ (h3 << 1);
     }
 };
 
@@ -23,6 +33,7 @@ struct MsgPrepare {
     int view;
     int op;
     int commit;
+    std::size_t loghash;
     MsgClientOp cliop;
 };
 

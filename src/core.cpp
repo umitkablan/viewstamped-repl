@@ -1,5 +1,8 @@
 #include "core.hpp"
 
+#include "hasher.hpp"
+
+#include <functional>
 #include <iostream>
 using std::cout;
 using std::endl;
@@ -19,6 +22,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicat
   , status_(Status::Normal)
   , op_(-1)
   , commit_(-1)
+  , log_hash_(0)
   , prepare_sent_(false)
   , latest_healthtick_received_(1)
   , healthcheck_tick_(1)
@@ -160,7 +164,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   prepare_sent_ = true;
   for (int i=0; i<totreplicas_; ++i)
     if (i != replica_)
-      dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, msg });
+      dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, log_hash_, msg });
 
   return 0;
 }
@@ -187,6 +191,25 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return ret;
   }
 
+  if (commit_ > msgpr.commit || (commit_ == msgpr.commit && msgpr.loghash != log_hash_)) {
+    logs_.pop_back();
+    log_hash_ = mergeLogsHashes(logs_.begin(), logs_.end());
+    commit_ = -1;
+    if (!logs_.empty())
+      commit_ = logs_.back().first;
+    op_ = commit_;
+  }
+
+  // if (msgpr.loghash != log_hash_) {
+  //   cout << replica_ << ":" << view_ << "<-" << from << " v:" << msgpr.view
+  //        << " my commit: " << commit_ << " hash:" << log_hash_
+  //        << " != msgpr.commit:" << msgpr.commit
+  //        << " msgpr.hash:" << msgpr.loghash << " resetting my commit!!" << endl;
+  //   commit_ = msgpr.commit;
+  //   while (msgpr.commit > logs_.back().first)
+  //     logs_.pop_back();
+  // }
+
   healthcheck_tick_ = latest_healthtick_received_;
   if (msgpr.commit == op_) {
     if (op_ > commit_) {
@@ -194,6 +217,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
            << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
       logs_.push_back(std::make_pair(op_, cliop_));
       commit_ = op_;
+      log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
     }
 
     if (msgpr.op > commit_) {
@@ -252,13 +276,14 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     auto& r = svResps_[maxidx];
     if (!r.missing_entries.empty())
       op_ = commit_ = r.missing_entries[0].first;
-    for (int i=r.missing_entries.size(); i-->0; )
-    {
+    const auto cursz = logs_.size();
+    for (int i=r.missing_entries.size(); i-->0; ) {
       auto&& cliop = r.missing_entries[i];
       cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) committing op:" << op_
            << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
       logs_.push_back(std::move(cliop));
     }
+    log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   }
 
   return 0;
@@ -308,6 +333,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     << "] op_:" << op_ << " cliop:" << cliop_.toString() << " sz:" << logs_.size() << endl;
   logs_.push_back(std::make_pair(op_, cliop_));
   commit_ = op_;
+  log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
 
   return 0;
 }
@@ -348,8 +374,10 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     return -2;
   }
 
+  auto cursz = logs_.size();
   for (int i=mlresp.comitted_logs.size(); i-->0; )
     logs_.push_back(mlresp.comitted_logs[i]);
+  log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   cout << replica_ << ":" << view_ << "<-" << from << " (RespML) commit_ to " << logs_.back().first
        << " op to " << mlresp.op_log.first << endl;
   commit_ = logs_.back().first;
@@ -381,7 +409,7 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
     }
     for (int i = 0; i < totreplicas_; ++i) {
       if (i != replica_)
-        dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, MsgClientOp{} });
+        dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, commit_, log_hash_, MsgClientOp{} });
     }
     return;
 

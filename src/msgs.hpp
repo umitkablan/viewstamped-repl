@@ -53,6 +53,7 @@ struct MsgStartView {
 
 // Followers' response to the Leader candidate
 struct MsgStartViewResponse {
+    int view;
     std::string err;
     int last_commit;
     std::vector<std::pair<int, MsgClientOp>> missing_entries;

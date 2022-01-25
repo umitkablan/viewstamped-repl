@@ -329,18 +329,21 @@ TEST(CoreTest, MissingLogs)
   }
   ASSERT_EQ(0, cr1.OpID());
   {
-    cr1.ConsumeMsg(leader, MsgPrepare { view, 0, 0, 593537993421075790ull, MsgClientOp { 1237, "" } });
+    const auto hh = cr1.GetHash();
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 0, 0, hh, MsgClientOp { 1237, "" } });
     ASSERT_EQ(0, missing_log_reqs.size());
   }
   ASSERT_EQ(0, cr1.CommitID());
   ASSERT_EQ(0, cr1.OpID());
 
   {
-    cr1.ConsumeMsg(leader, MsgPrepare { view, 4, 0, 593537993421075790ull, MsgClientOp { 1237, "xzz=efrs" } });
+    const auto hh = cr1.GetHash();
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 4, 0, hh, MsgClientOp { 1237, "xzz=efrs" } });
     ASSERT_EQ(0, cr1.CommitID());
     ASSERT_EQ(4, cr1.OpID());
     ASSERT_EQ(0, missing_log_reqs.size());
-    cr1.ConsumeMsg(leader, MsgPrepare { view, 5, 4, 14974115470896151948ull, MsgClientOp { 1237, "azx=342" } });
+    const auto hh2 = cr1.GetHash();
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 5, 4, hh2, MsgClientOp { 1237, "azx=342" } });
     ASSERT_EQ(4, cr1.CommitID());
     ASSERT_EQ(5, cr1.OpID());
     ASSERT_EQ(0, missing_log_reqs.size());
@@ -681,7 +684,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps[4].ConsumeMsg(MsgClientOp { 1688, "xt=to4_isolated40_v4to6-002" });
   vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=75" });
   for (int i = 0; i < 21; ++i) {
-    if (vsreps[1].OpID() == vsreps[1].CommitID()) // vsreps[1].CommitID() > 1
+    if (vsreps[1].CommitID() > 1) //vsreps[1].OpID() == vsreps[1].CommitID()
       break;
     ASSERT_LT(i, 20);
     sleep_for(std::chrono::milliseconds(50));

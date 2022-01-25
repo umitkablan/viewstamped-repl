@@ -133,7 +133,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   } else {
     cout << replica_ << ":" << view_ << " (SV) my view is bigger than received v:"
       << sv.view << "!! skipping..." << endl;
-    return MsgStartViewResponse { "My view is bigger than received v:" + std::to_string(sv.view) };
+    return MsgStartViewResponse { view_, "My view is bigger than received v:" + std::to_string(sv.view) };
   }
 
   std::vector<std::pair<int, MsgClientOp>> missing_logs;
@@ -142,7 +142,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
       missing_logs.push_back(logs_[i]);
     else break;
 
-  return MsgStartViewResponse { "", commit_, std::move(missing_logs) };
+  return MsgStartViewResponse { view_, "", commit_, std::move(missing_logs) };
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
@@ -238,7 +238,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
         << " lastcommit:" << svresp.last_commit << "; I am not the Leader " << endl;
     return -1;
   }
-  auto [isdup, idx] = checkDuplicate(trackDups_SVResps_, from, svresp.last_commit);
+  auto [isdup, idx] = checkDuplicate(trackDups_SVResps_, from, svresp.view);
   if (isdup)
     return 0; // double sent
 

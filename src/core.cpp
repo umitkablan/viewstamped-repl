@@ -228,6 +228,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     dispatcher_.SendMsg(view_ % totreplicas_, MsgGetMissingLogs { view_, commit_ });
   }
 
+  ret.op = op_;
   return ret;
 }
 
@@ -401,7 +402,7 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
     for (int i = 0; i < totreplicas_; ++i) {
       if (i != replica_) {
         if (status_ == Status::Normal)
-          dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, op_, log_hash_, MsgClientOp {} });
+          dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, op_, log_hash_, cliop_ });
         else
           dispatcher_.SendMsg(i, MsgPrepare { view_, -1, -1, 1, MsgClientOp {} });
       }

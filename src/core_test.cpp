@@ -792,18 +792,25 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 
   // Check that re-joined island gets ops successfully
   for (int i = 0; i < 21; ++i) {
-    if (vsreps[1].OpID() == 4 && vsreps[1].CommitID() == 4
+    if (vsreps[0].OpID() == 4 && vsreps[0].CommitID() == 4
+        && vsreps[1].OpID() == 4 && vsreps[1].CommitID() == 4
         && vsreps[2].OpID() == 4 && vsreps[2].CommitID() == 4)
       break;
     ASSERT_LT(i, 20);
     sleep_for(std::chrono::milliseconds(50));
   }
-  ASSERT_EQ(4, vsreps[1].CommitID());
-  ASSERT_EQ(4, vsreps[2].CommitID());
 
-  ASSERT_EQ(5, vsreps[0].GetCommittedLogs().size());
   {
     auto&& logs = vsreps[1].GetCommittedLogs();
+    ASSERT_EQ(5, logs.size());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp { 1212, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp { 1212, "x=to2_isolated1_v2-6655" }), logs[1]);
+    ASSERT_EQ(std::make_pair(2, MsgClientOp { 5908, "xu=75" }), logs[2]);
+    ASSERT_EQ(std::make_pair(3, MsgClientOp { 5908, "xu=to1_joining40_beforeisolating12_v6-004" }), logs[3]);
+    ASSERT_EQ(std::make_pair(4, MsgClientOp { 1571, "y=to3_isolated12_v8-1563" }), logs[4]);
+  }
+  {
+    auto&& logs = vsreps[0].GetCommittedLogs();
     ASSERT_EQ(5, logs.size());
     ASSERT_EQ(std::make_pair(0, MsgClientOp { 1212, "x=12" }), logs[0]);
     ASSERT_EQ(std::make_pair(1, MsgClientOp { 1212, "x=to2_isolated1_v2-6655" }), logs[1]);

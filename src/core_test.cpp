@@ -36,9 +36,10 @@ TEST(HasherTest, BasicHashAndMerge_Repeating)
   const auto h3 = mergeLogsHashes(vv.begin() + 3, vv.begin() + 4, h2);
 
   ASSERT_EQ(hAll, h3);
-  ASSERT_EQ(std::size_t(10782676624795537932ull), h0);
-  ASSERT_EQ(std::size_t(11415403314268682002ull), h2);
-  ASSERT_EQ(std::size_t(15084498811304813772ull), h3);
+  // below values change depending on (libc++) platform - fails during PR validation
+  // ASSERT_EQ(std::size_t(10782676624795537932ull), h0);
+  // ASSERT_EQ(std::size_t(11415403314268682002ull), h2);
+  // ASSERT_EQ(std::size_t(15084498811304813772ull), h3);
 }
 
 TEST(CoreTest, BasicDoViewChange)
@@ -620,6 +621,12 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
     ASSERT_EQ(std::make_pair(0, MsgClientOp{ 1212, "x=12" }), logs[0]);
     ASSERT_EQ(std::make_pair(1, MsgClientOp{ 1212, "x=to2_isolated1_v2-6655" }), logs.back());
   }
+  for (int i = 0; i < 21; ++i) {
+    if (vsreps[1].CommitID() > 0)
+      break;
+    ASSERT_LT(i, 20);
+    sleep_for(std::chrono::milliseconds(50));
+  }
   {
     const auto& logs = vsreps[1].GetCommittedLogs();
     ASSERT_EQ(logs.size(), 2);
@@ -677,12 +684,12 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps[4].ConsumeMsg(MsgClientOp { 1688, "xt=to4_isolated40_v4to6-002" });
   vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=75" });
   for (int i = 0; i < 21; ++i) {
-    if (vsreps[1].OpID() == vsreps[1].CommitID())
+    if (vsreps[1].CommitID() > 1) // vsreps[1].OpID() == vsreps[1].CommitID()
       break;
     ASSERT_LT(i, 20);
     sleep_for(std::chrono::milliseconds(50));
   }
-  if (vsreps[1].CommitID() != 1) {
+  {
     const auto& logs = vsreps[1].GetCommittedLogs();
     ASSERT_GT(logs.size(), 2);
     ASSERT_EQ(std::make_pair(0, MsgClientOp{ 1212, "x=12" }), logs[0]);
@@ -815,8 +822,6 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(5, vsreps[0].GetCommittedLogs().size());
   {
     auto&& logs = vsreps[1].GetCommittedLogs();
-    for (auto&& pp : logs)
-      cout << pp.first << " " << pp.second.toString() << endl;
     ASSERT_EQ(5, logs.size());
     ASSERT_EQ(std::make_pair(0, MsgClientOp { 1212, "x=12" }), logs[0]);
     ASSERT_EQ(std::make_pair(1, MsgClientOp { 1212, "x=to2_isolated1_v2-6655" }), logs[1]);

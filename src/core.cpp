@@ -149,7 +149,7 @@ template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     const MsgClientOp& msg)
 {
-  cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.toString()
+  cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " cliop:" << msg.toString()
        << " commit:" << op_ << "/" << commit_ << endl;
   if ((view_ % totreplicas_) != replica_) {
     dispatcher_.SendMsg(view_ % totreplicas_, msg);
@@ -192,6 +192,10 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   }
 
   if (commit_ > msgpr.commit || (commit_ == msgpr.commit && msgpr.loghash != log_hash_)) {
+    cout << replica_ << ":" << view_ << "<-" << from << " (PREP) pop-back sz:" << logs_.size()
+         << " commit:" << op_ << "/" << commit_
+         << " msgpr.commit:" << msgpr.op << "/" << msgpr.commit
+         << " msg.hash:" << msgpr.loghash << endl;
     logs_.pop_back();
     log_hash_ = mergeLogsHashes(logs_.begin(), logs_.end());
     commit_ = -1;
@@ -214,7 +218,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   if (msgpr.commit == op_) {
     if (op_ > commit_) {
       cout << replica_ << ":" << view_ << "<-" << from << " (PREP) committing op:" << op_
-           << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
+           << " cliop:" << cliop_.toString() << " sz:" << logs_.size() << endl;
       logs_.push_back(std::make_pair(op_, cliop_));
       commit_ = op_;
       log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);

@@ -79,7 +79,6 @@ struct MsgMissingLogsResponse {
 
 struct MsgPersistedCliOp {
     int view;
-    int clientid;
     uint64_t cliopid;
 };
 

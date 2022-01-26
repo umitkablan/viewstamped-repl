@@ -211,7 +211,6 @@ TEST(CoreTest, LeaderSendsPrepare)
       ASSERT_EQ(1, cli_reqs.size());
       ASSERT_EQ(17, cli_reqs[0].second.cliopid);
       ASSERT_EQ(1231, cli_reqs[0].first);
-      ASSERT_EQ(1231, cli_reqs[0].second.clientid);
       cli_reqs.clear();
     }
 
@@ -304,7 +303,6 @@ TEST(CoreTest, LeaderPrepareTimeouts)
     ASSERT_EQ(1, cli_reqs.size());
     ASSERT_EQ(134, cli_reqs[0].second.cliopid);
     ASSERT_EQ(1278, cli_reqs[0].first);
-    ASSERT_EQ(1278, cli_reqs[0].second.clientid);
     cli_reqs.clear();
     ASSERT_EQ(4, recv.size());
     for (int i = 0; i < recv.size(); ++i) {
@@ -357,7 +355,6 @@ TEST(CoreTest, MissingLogs)
     ASSERT_EQ(1, cli_reqs.size());
     ASSERT_EQ(17, cli_reqs[0].second.cliopid);
     ASSERT_EQ(1336, cli_reqs[0].first);
-    ASSERT_EQ(1336, cli_reqs[0].second.clientid);
     cli_reqs.clear();
   }
   ASSERT_EQ(0, cr1.CommitID());
@@ -377,7 +374,6 @@ TEST(CoreTest, MissingLogs)
     ASSERT_EQ(1, cli_reqs.size());
     ASSERT_EQ(19, cli_reqs[0].second.cliopid);
     ASSERT_EQ(1297, cli_reqs[0].first);
-    ASSERT_EQ(1297, cli_reqs[0].second.clientid);
     cli_reqs.clear();
   }
   ASSERT_EQ(4, cr1.CommitID());
@@ -397,7 +393,6 @@ TEST(CoreTest, MissingLogs)
     ASSERT_EQ(1, cli_reqs.size());
     ASSERT_EQ(112, cli_reqs[0].second.cliopid);
     ASSERT_EQ(1237, cli_reqs[0].first);
-    ASSERT_EQ(1237, cli_reqs[0].second.clientid);
     cli_reqs.clear();
   }
   cr1.HealthTimeoutTicked();
@@ -425,7 +420,6 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow0)
   ASSERT_EQ(1, cli_reqs.size());
   ASSERT_EQ(1, cli_reqs[0].second.cliopid);
   ASSERT_EQ(1445, cli_reqs[0].first);
-  ASSERT_EQ(1445, cli_reqs[0].second.clientid);
   cli_reqs.clear();
   // however, as leader_next doesn't know about this commit, it should be reverted
   cr0.ConsumeMsg(leader_next, MsgPrepare { view_next, -1, -1, 0, MsgClientOp {} });
@@ -453,7 +447,6 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow1)
   ASSERT_EQ(1, cli_reqs.size());
   ASSERT_EQ(1, cli_reqs[0].second.cliopid);
   ASSERT_EQ(1445, cli_reqs[0].first);
-  ASSERT_EQ(1445, cli_reqs[0].second.clientid);
   cli_reqs.clear();
   // however, as leader_next doesn't know about this commit, it should be reverted
   cr0.ConsumeMsg(leader_next, MsgPrepare { view_next, 0, -1, 0, MsgClientOp { 123, "to1=y", 1 } });
@@ -486,7 +479,6 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow2)
   ASSERT_EQ(1, cli_reqs.size());
   ASSERT_EQ(1, cli_reqs[0].second.cliopid);
   ASSERT_EQ(1445, cli_reqs[0].first);
-  ASSERT_EQ(1445, cli_reqs[0].second.clientid);
   cli_reqs.clear();
   // however, as leader_next doesn't know about this commit, it should be reverted
   cr0.ConsumeMsg(leader_next, MsgPrepare { view_next, 1, 0, 6747, MsgClientOp { 123, "to1=y", 2 } });

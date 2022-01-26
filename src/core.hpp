@@ -1,5 +1,5 @@
-#ifndef TSTAMPED_CORE_INCLUDED_
-#define TSTAMPED_CORE_INCLUDED_ 1
+#ifndef VSREPL_CORE_INCLUDED_
+#define VSREPL_CORE_INCLUDED_ 1
 
 #include "msgs.hpp"
 
@@ -29,6 +29,8 @@ public:
     MsgPrepareResponse ConsumeMsg(int from, const MsgPrepare&);
     MsgMissingLogsResponse
         ConsumeMsg(int from, const MsgGetMissingLogs&);
+    MsgOpPersistedResponse
+        ConsumeMsg(int from, const MsgOpPersistedQuery&);
 
     int ConsumeReply(int from, const MsgPrepareResponse&);
     int ConsumeReply(int from, const MsgStartViewResponse&);

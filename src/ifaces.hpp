@@ -17,6 +17,10 @@ public:
   virtual void SendMsg(int to, const MsgStartView&) = 0;
   virtual void SendMsg(int to, const MsgPrepare&) = 0;
   virtual void SendMsg(int to, const MsgGetMissingLogs&) = 0;
+
+  // Necessary for Client
+  virtual void SendMsg(     int to, const MsgOpPersistedQuery&) = 0;
+  virtual void SendToClient(int to, const MsgPersistedCliOp&) = 0;
 };
 
 class INetDispatcher {
@@ -29,6 +33,10 @@ public:
   virtual void SendMsg(int from, int to, const MsgStartView&) = 0;
   virtual void SendMsg(int from, int to, const MsgPrepare&) = 0;
   virtual void SendMsg(int from, int to, const MsgGetMissingLogs&) = 0;
+
+  // Necessary for Client
+  virtual void SendMsg(     int from, int to, const MsgOpPersistedQuery&) = 0;
+  virtual void SendToClient(int from, int to, const MsgPersistedCliOp&) = 0;
 };
 
 class IStateMachine {

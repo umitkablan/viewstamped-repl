@@ -1,4 +1,5 @@
 #include "core.cpp"
+#include "cli.cpp"
 
 #include "ifaces.hpp"
 
@@ -23,6 +24,9 @@ public:
     MOCK_METHOD(void, SendMsg, (int to, const MsgStartView&), (override));
     MOCK_METHOD(void, SendMsg, (int to, const MsgPrepare&), (override));
     MOCK_METHOD(void, SendMsg, (int to, const MsgGetMissingLogs&), (override));
+
+    MOCK_METHOD(void, SendMsg, (int to, const MsgOpPersistedQuery&), (override));
+    MOCK_METHOD(void, SendToClient, (int to, const MsgPersistedCliOp&), (override));
 };
 
 class MockStateMachine : public IStateMachine {
@@ -70,9 +74,19 @@ public:
         parent_->SendMsg(from_, to, ml);
     }
 
+    void SendMsg(int to, const MsgOpPersistedQuery& opq) override
+    {
+        parent_->SendMsg(from_, to, opq);
+    }
+
+    void SendToClient(int to, const MsgPersistedCliOp& pco) override
+    {
+      parent_->SendToClient(from_, to, pco);
+    }
+
 };
 
-template <typename ViewStampedReplEngine>
+template <typename ViewStampedReplEngine, typename VSReplCli>
 class FakeTMsgBuggyNetwork : public INetDispatcher {
 public:
   enum class TstMsgType : char {
@@ -85,23 +99,28 @@ public:
     PrepareResponse,
     GetMissingLogs,
     MissingLogsResponse,
+    OpPersistedQuery,
+    PersistedCliOp,
   };
 
-  FakeTMsgBuggyNetwork(std::function<int(int, int, TstMsgType, int)> decFun, bool shuffle = false)
+  FakeTMsgBuggyNetwork(int cliMinIdx,
+      std::function<int(int, int, TstMsgType, int)> decFun, bool shuffle = false)
     : random_chose_border_((RAND_MAX / 3) * 2)
+    , clientMinIndex_(cliMinIdx)
     , is_shuffle_(shuffle)
     , decide_(decFun)
     , break_thread_(false)
   {
   }
 
-  void SetEnginesStart(std::vector<ViewStampedReplEngine*> engines)
+  void SetEnginesStart(std::vector<ViewStampedReplEngine*> engines, std::vector<VSReplCli*> clients)
   {
     if (th_.joinable())
       throw std::invalid_argument("network thread is running");
 
     engines_mtxs_ = std::vector<std::mutex>(engines.size());
     engines_ = std::move(engines);
+    clients_ = std::move(clients);
 
     break_thread_ = false;
     th_ = std::thread([this]() { threadTask(); });
@@ -121,6 +140,7 @@ public:
 
     engines_.clear();
     engines_mtxs_.clear();
+    clients_.clear();
   }
 
   void SetDecideFun(std::function<int(int, int, TstMsgType, int)> decFun)
@@ -223,10 +243,43 @@ public:
     });
   }
 
+  void SendMsg(int from, int to, const MsgOpPersistedQuery& opq) override
+  {
+    enqueueTask(pts_, [from, to, opq, this]() {
+      auto ret = callDecideSync(from, to, TstMsgType::OpPersistedQuery, opq.perscliop.view);
+      MsgOpPersistedResponse opqresp {};
+      if (!ret) {
+        std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
+        opqresp = engines_[to]->ConsumeMsg(from, opq);
+      } else return ret;
+
+      ret = callDecideSync(to, from, TstMsgType::OpPersistedQuery, opq.perscliop.view);
+      if (!ret) {
+        // std::lock_guard<std::mutex> lck(clients_mtxs_[from]);
+        return clients_[from - clientMinIndex_]->ConsumeReply(to, opqresp);
+      }
+      return ret;
+    });
+  }
+
+  void SendToClient(int from, int to, const MsgPersistedCliOp& pco) override
+  {
+    enqueueTask(pts_, [from, to, pco, this]() {
+      auto ret = callDecideSync(from, to, TstMsgType::PersistedCliOp, pco.view);
+      if (!ret) {
+        // std::lock_guard<std::mutex> lck(clients_mtxs_[to]);
+        clients_[to - clientMinIndex_]->ConsumeCliMsg(from, pco);
+      }
+      return ret;
+    });
+  }
+
 private:
   int random_chose_border_;
+  int clientMinIndex_;
   bool is_shuffle_;
   std::vector<ViewStampedReplEngine*> engines_;
+  std::vector<VSReplCli*> clients_;
   std::vector<std::mutex> engines_mtxs_;
   std::mutex decide_mtx_;
   std::function<int(int, int, TstMsgType, int)> decide_;
@@ -305,4 +358,6 @@ private:
 template class ViewstampedReplicationEngine<test::MockTMsgDispatcher, test::MockStateMachine>;
 template class ViewstampedReplicationEngine<test::ParentMsgDispatcher, test::MockStateMachine>;
 
+template class VSReplCli<test::MockTMsgDispatcher>;
+template class VSReplCli<test::ParentMsgDispatcher>;
 }

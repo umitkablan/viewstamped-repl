@@ -215,6 +215,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
       logs_.push_back(std::make_pair(op_, cliop_));
       commit_ = op_;
       log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
+      dispatcher_.SendToClient(cliop_.clientid, MsgPersistedCliOp{view_, cliop_.clientid, cliop_.cliopid});
     }
 
     if (msgpr.op > commit_) {
@@ -281,7 +282,9 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
       auto&& cliop = r.missing_entries[i];
       cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) committing op:" << op_
            << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
-      logs_.push_back(std::move(cliop));
+      logs_.push_back(cliop);
+      dispatcher_.SendToClient(cliop.second.clientid,
+          MsgPersistedCliOp{view_, cliop.second.clientid, cliop.second.cliopid});
     }
     log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   }
@@ -335,6 +338,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   logs_.push_back(std::make_pair(op_, cliop_));
   commit_ = op_;
   log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
+  dispatcher_.SendToClient(cliop_.clientid, MsgPersistedCliOp{view_, cliop_.clientid, cliop_.cliopid});
 
   return 0;
 }
@@ -376,8 +380,11 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   }
 
   auto cursz = logs_.size();
-  for (int i=mlresp.comitted_logs.size(); i-->0; )
+  for (int i=mlresp.comitted_logs.size(); i-->0; ) {
     logs_.push_back(mlresp.comitted_logs[i]);
+    const auto& msg = mlresp.comitted_logs[i].second;
+    dispatcher_.SendToClient(msg.clientid, MsgPersistedCliOp{view_, msg.clientid, msg.cliopid});
+  }
   log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   cout << replica_ << ":" << view_ << "<-" << from << " (RespML) commit_ to " << logs_.back().first
        << " op to " << mlresp.op_log.first << endl;
@@ -386,6 +393,14 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   cliop_ = std::move(mlresp.op_log.second);
 
   return 0;
+}
+
+template <typename TMsgDispatcher, typename TStateMachine>
+MsgOpPersistedResponse
+ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgOpPersistedQuery& opq)
+{
+  MsgOpPersistedResponse ret{"", opq.perscliop, false};
+  return ret;
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>

@@ -263,13 +263,15 @@ TEST(CoreTest, LeaderPrepareTimeouts)
     ASSERT_EQ(0, cr.OpID());
   }
 
-  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies
-  ASSERT_EQ(0, cr.CommitID());
+  cr.ConsumeReply(2, MsgPrepareResponse { "", -1 }); // replica:2 replies different op
+  ASSERT_EQ(-1, cr.CommitID());
   ASSERT_EQ(0, cr.OpID());
 
-  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies again
+  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies correct op
   ASSERT_EQ(0, cr.CommitID());
-  cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // replica:1 replies
+  cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // replica:1 replies again
+  ASSERT_EQ(0, cr.CommitID());
+  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies again
   ASSERT_EQ(0, cr.CommitID());
   ASSERT_EQ(0, cr.OpID());
 

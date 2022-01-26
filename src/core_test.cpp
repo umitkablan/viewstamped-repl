@@ -263,21 +263,17 @@ TEST(CoreTest, LeaderPrepareTimeouts)
     ASSERT_EQ(0, cr.OpID());
   }
 
-  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies
-  ASSERT_EQ(0, cr.CommitID());
+  cr.ConsumeReply(2, MsgPrepareResponse { "", -1 }); // replica:2 replies different op
+  ASSERT_EQ(-1, cr.CommitID());
   ASSERT_EQ(0, cr.OpID());
 
+  cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies correct op
+  ASSERT_EQ(0, cr.CommitID());
+  cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // replica:1 replies again
+  ASSERT_EQ(0, cr.CommitID());
   cr.ConsumeReply(2, MsgPrepareResponse { "", 0 }); // replica:2 replies again
   ASSERT_EQ(0, cr.CommitID());
-  cr.ConsumeReply(1, MsgPrepareResponse { "", 0 }); // replica:1 replies
-  ASSERT_EQ(0, cr.CommitID());
   ASSERT_EQ(0, cr.OpID());
-
-  // { // When ClientOp is received before Tick we optimize Prepare's
-  //   cr.HealthTimeoutTicked();
-  //   ASSERT_EQ(0, recv.size());
-  //   ASSERT_EQ(-1, cr.CommitID());
-  // }
 
   cr.ConsumeReply(3, MsgPrepareResponse { "", 0 });
   {
@@ -293,6 +289,26 @@ TEST(CoreTest, LeaderPrepareTimeouts)
   ASSERT_EQ(0, cr.CommitID());
   cr.ConsumeReply(3, MsgPrepareResponse { "", 1 });
   ASSERT_EQ(1, cr.CommitID());
+
+  //
+  // When ClientOp is received before Tick we optimize Prepare's
+  {
+    cr.ConsumeMsg(MsgClientOp { 1278, "dd=oprea", 789 });
+    ASSERT_EQ(2, cr.OpID());
+    ASSERT_EQ(1, cr.CommitID());
+    ASSERT_EQ(4, recv.size());
+    for (int i = 0; i < recv.size(); ++i) {
+      ASSERT_EQ(i + 1, recv[i].first);
+      ASSERT_EQ(2, recv[i].second.op);
+    }
+    recv.clear();
+    cr.HealthTimeoutTicked();
+    ASSERT_EQ(0, recv.size()); // nothing sent
+    cr.ConsumeMsg(MsgClientOp { 1278, "ed=oea", 790 }); // not sent
+    ASSERT_EQ(2, cr.OpID());
+    ASSERT_EQ(1, cr.CommitID());
+    ASSERT_EQ(0, recv.size());
+  }
 }
 
 TEST(CoreTest, MissingLogs)

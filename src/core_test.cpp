@@ -191,6 +191,11 @@ TEST(CoreTest, LeaderSendsPrepare)
       res.push_back(to);
       cr.ConsumeReply(to, MsgPrepareResponse { "", pr.op });
     });
+  std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs](int to, const MsgPersistedCliOp& pco) {
+    ASSERT_EQ(0, pco.view);
+    cli_reqs.push_back(std::make_pair(to, pco));
+  });
 
   cr.HealthTimeoutTicked();
   ASSERT_THAT(res, ElementsAre(1, 2, 3, 4));
@@ -198,15 +203,20 @@ TEST(CoreTest, LeaderSendsPrepare)
 
   { // When ClientOp is received before Tick we optimize Prepare's
     for (int i = 0; i < 20; ++i) {
-      cr.ConsumeMsg(MsgClientOp{1231, "x=y"});
+      cr.ConsumeMsg(MsgClientOp{1231, "x=y", 17});
       ASSERT_THAT(res, ElementsAre(1, 2, 3, 4));
       res.clear();
       cr.HealthTimeoutTicked();
       ASSERT_EQ(0, res.size()); // no prepares sent (for now)
+      ASSERT_EQ(1, cli_reqs.size());
+      ASSERT_EQ(17, cli_reqs[0].second.cliopid);
+      ASSERT_EQ(1231, cli_reqs[0].first);
+      cli_reqs.clear();
     }
 
     cr.HealthTimeoutTicked(); // no optimization here since after ClientOp, ticked twice
     ASSERT_THAT(res, ElementsAre(1, 2, 3, 4));
+    ASSERT_EQ(0, cli_reqs.size());
   }
 }
 
@@ -223,9 +233,15 @@ TEST(CoreTest, LeaderPrepareTimeouts)
       recv.push_back(std::make_pair(to, pr));
       // don't call PrepareResponse to simulate a fail/isolation
     });
+  std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs](int to, const MsgPersistedCliOp& pco) {
+    ASSERT_EQ(0, pco.view);
+    cli_reqs.push_back(std::make_pair(to, pco));
+  });
 
   {
-    cr.ConsumeMsg(MsgClientOp { 1278, "xy=ert" });
+    cr.ConsumeMsg(MsgClientOp { 1278, "xy=ert", 134 });
+    ASSERT_EQ(0, cli_reqs.size());
     ASSERT_EQ(4, recv.size());
     for (int i = 0; i < recv.size(); ++i) {
       ASSERT_EQ(i+1, recv[i].first);
@@ -242,6 +258,7 @@ TEST(CoreTest, LeaderPrepareTimeouts)
   }
   for (int i = 0; i < 2; ++i) { // let's timeout the op
     cr.HealthTimeoutTicked();
+    ASSERT_EQ(0, cli_reqs.size());
     ASSERT_EQ(4, recv.size());
     for (int i = 0; i < recv.size(); ++i) {
       ASSERT_EQ(i+1, recv[i].first);
@@ -254,6 +271,7 @@ TEST(CoreTest, LeaderPrepareTimeouts)
   {
     cr.HealthTimeoutTicked();
     ASSERT_EQ(4, recv.size());
+    ASSERT_EQ(0, cli_reqs.size());
     for (int i = 0; i < recv.size(); ++i) {
       ASSERT_EQ(i + 1, recv[i].first);
       ASSERT_EQ(-1, recv[i].second.op);
@@ -278,6 +296,10 @@ TEST(CoreTest, LeaderPrepareTimeouts)
   cr.ConsumeReply(3, MsgPrepareResponse { "", 0 });
   {
     cr.ConsumeMsg(MsgClientOp { 1278, "zz=ttt" });
+    ASSERT_EQ(1, cli_reqs.size());
+    ASSERT_EQ(134, cli_reqs[0].second.cliopid);
+    ASSERT_EQ(1278, cli_reqs[0].first);
+    cli_reqs.clear();
     ASSERT_EQ(4, recv.size());
     for (int i = 0; i < recv.size(); ++i) {
       ASSERT_EQ(i+1, recv[i].first);
@@ -324,36 +346,51 @@ TEST(CoreTest, MissingLogs)
       ASSERT_EQ(view, gml.view);
       missing_log_reqs.push_back(std::make_pair(to, gml));
     });
+  std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs, view](int to, const MsgPersistedCliOp& pco) {
+    ASSERT_EQ(view, pco.view);
+    cli_reqs.push_back(std::make_pair(to, pco));
+  });
 
   {
     cr1.ConsumeMsg(leader, MsgPrepare { view, -1, -1, 0, MsgClientOp{} });
     ASSERT_EQ(0, missing_log_reqs.size());
+    ASSERT_EQ(0, cli_reqs.size());
   }
   ASSERT_EQ(-1, cr1.OpID());
   {
-    cr1.ConsumeMsg(leader, MsgPrepare { view, 0, -1, 0, MsgClientOp{1237, "xz=efr"} });
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 0, -1, 0, MsgClientOp{1336, "xz=efr", 17} });
     ASSERT_EQ(0, missing_log_reqs.size());
+    ASSERT_EQ(0, cli_reqs.size());
   }
   ASSERT_EQ(0, cr1.OpID());
   {
     const auto hh = cr1.GetHash();
     cr1.ConsumeMsg(leader, MsgPrepare { view, 0, 0, hh, MsgClientOp { 1237, "" } });
     ASSERT_EQ(0, missing_log_reqs.size());
+    ASSERT_EQ(1, cli_reqs.size());
+    ASSERT_EQ(17, cli_reqs[0].second.cliopid);
+    ASSERT_EQ(1336, cli_reqs[0].first);
+    cli_reqs.clear();
   }
   ASSERT_EQ(0, cr1.CommitID());
   ASSERT_EQ(0, cr1.OpID());
 
   {
     const auto hh = cr1.GetHash();
-    cr1.ConsumeMsg(leader, MsgPrepare { view, 4, 0, hh, MsgClientOp { 1237, "xzz=efrs" } });
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 4, 0, hh, MsgClientOp{1297, "xzz=efrs", 19} });
     ASSERT_EQ(0, cr1.CommitID());
     ASSERT_EQ(4, cr1.OpID());
     ASSERT_EQ(0, missing_log_reqs.size());
     const auto hh2 = cr1.GetHash();
-    cr1.ConsumeMsg(leader, MsgPrepare { view, 5, 4, hh2, MsgClientOp { 1237, "azx=342" } });
+    cr1.ConsumeMsg(leader, MsgPrepare { view, 5, 4, hh2, MsgClientOp{1277, "azx=342", 21} });
     ASSERT_EQ(4, cr1.CommitID());
     ASSERT_EQ(5, cr1.OpID());
     ASSERT_EQ(0, missing_log_reqs.size());
+    ASSERT_EQ(1, cli_reqs.size());
+    ASSERT_EQ(19, cli_reqs[0].second.cliopid);
+    ASSERT_EQ(1297, cli_reqs[0].first);
+    cli_reqs.clear();
   }
   ASSERT_EQ(4, cr1.CommitID());
   ASSERT_EQ(5, cr1.OpID());
@@ -364,11 +401,15 @@ TEST(CoreTest, MissingLogs)
     ASSERT_EQ(leader, missing_log_reqs[0].first);
     ASSERT_EQ(4, missing_log_reqs[0].second.my_last_commit);
     cr1.ConsumeReply(leader, MsgMissingLogsResponse { view, "",
-        { 7, MsgClientOp { 1237, "ss=45" } },
+        { 7, MsgClientOp{ 1237, "ss=45", 113 } },
         {
-          { 6, MsgClientOp { 1237, "ee=dd" } },
+          { 6, MsgClientOp{ 1237, "ee=dd", 112 } },
         }
       });
+    ASSERT_EQ(1, cli_reqs.size());
+    ASSERT_EQ(112, cli_reqs[0].second.cliopid);
+    ASSERT_EQ(1237, cli_reqs[0].first);
+    cli_reqs.clear();
   }
   cr1.HealthTimeoutTicked();
   cr1.HealthTimeoutTicked();
@@ -384,13 +425,23 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow0)
 
   const int view_cur = 6, view_next = 7, leader_cur = 0, leader_next = 1;
 
+  std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs](int to, const MsgPersistedCliOp& pco) {
+    cli_reqs.push_back(std::make_pair(to, pco));
+  });
+
   cr0.ConsumeMsg(leader_cur, MsgPrepare { view_cur, 0, -1, 0, MsgClientOp { 1445, "to0=x", 1 } });
   cr0.ConsumeReply(leader_cur, MsgPrepareResponse { "", 0 }); // leader:0 will persist
   ASSERT_EQ(0, cr0.CommitID());
+  ASSERT_EQ(1, cli_reqs.size());
+  ASSERT_EQ(1, cli_reqs[0].second.cliopid);
+  ASSERT_EQ(1445, cli_reqs[0].first);
+  cli_reqs.clear();
   // however, as leader_next doesn't know about this commit, it should be reverted
   cr0.ConsumeMsg(leader_next, MsgPrepare { view_next, -1, -1, 0, MsgClientOp {} });
   ASSERT_EQ(-1, cr0.CommitID());
   ASSERT_EQ(0, cr0.GetHash());
+  ASSERT_EQ(0, cli_reqs.size());
 }
 
 TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow1)
@@ -401,13 +452,23 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow1)
 
   const int view_cur = 6, view_next = 7, leader_cur = 0, leader_next = 1;
 
+  std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs](int to, const MsgPersistedCliOp& pco) {
+    cli_reqs.push_back(std::make_pair(to, pco));
+  });
+
   cr0.ConsumeMsg(leader_cur, MsgPrepare { view_cur, 0, -1, 0, MsgClientOp { 1445, "to0=x", 1 } });
   cr0.ConsumeReply(leader_cur, MsgPrepareResponse { "", 0 }); // leader:0 will persist
   ASSERT_EQ(0, cr0.CommitID());
+  ASSERT_EQ(1, cli_reqs.size());
+  ASSERT_EQ(1, cli_reqs[0].second.cliopid);
+  ASSERT_EQ(1445, cli_reqs[0].first);
+  cli_reqs.clear();
   // however, as leader_next doesn't know about this commit, it should be reverted
   cr0.ConsumeMsg(leader_next, MsgPrepare { view_next, 0, -1, 0, MsgClientOp { 123, "to1=y", 1 } });
   ASSERT_EQ(-1, cr0.CommitID());
   ASSERT_EQ(0, cr0.GetHash());
+  ASSERT_EQ(0, cli_reqs.size());
 }
 
 TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow2)
@@ -422,11 +483,19 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow2)
     ASSERT_EQ(view_next, gml.view);
     missing_log_reqs.push_back(std::make_pair(to, gml));
   });
+  std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs](int to, const MsgPersistedCliOp& pco) {
+    cli_reqs.push_back(std::make_pair(to, pco));
+  });
 
   cr0.ConsumeMsg(leader_cur, MsgPrepare { view_cur, 0, -1, 0, MsgClientOp { 1445, "to0=x", 1 } });
   cr0.ConsumeReply(leader_cur, MsgPrepareResponse { "", 0 }); // leader:0 will persist
   ASSERT_EQ(0, cr0.CommitID());
   ASSERT_EQ(0, missing_log_reqs.size());
+  ASSERT_EQ(1, cli_reqs.size());
+  ASSERT_EQ(1, cli_reqs[0].second.cliopid);
+  ASSERT_EQ(1445, cli_reqs[0].first);
+  cli_reqs.clear();
   // however, as leader_next doesn't know about this commit, it should be reverted
   cr0.ConsumeMsg(leader_next, MsgPrepare { view_next, 1, 0, 6747, MsgClientOp { 123, "to1=y", 2 } });
   ASSERT_EQ(-1, cr0.CommitID());
@@ -436,6 +505,7 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow2)
   ASSERT_EQ(1, missing_log_reqs.size());
   ASSERT_EQ(leader_next, missing_log_reqs[0].first);
   ASSERT_EQ(-1, missing_log_reqs[0].second.my_last_commit);
+  ASSERT_EQ(0, cli_reqs.size());
 
   const auto& logs = cr0.GetCommittedLogs();
   ASSERT_EQ(0, logs.size());
@@ -444,13 +514,17 @@ TEST(CoreTest, PrevLeaderDiscardsCommitIfLeaderDontKnow2)
 TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 {
   using VSREtype = ViewstampedReplicationEngine<ParentMsgDispatcher, MockStateMachine>;
+  using vsrCliTyp = VSReplCli<ParentMsgDispatcher>;
+  using testMessageTyp = FakeTMsgBuggyNetwork<VSREtype,vsrCliTyp>::TstMsgType;
+  const int clientMinIdx = 50;
 
-  FakeTMsgBuggyNetwork<VSREtype> buggynw(
-    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) {
+  FakeTMsgBuggyNetwork<VSREtype, vsrCliTyp> buggynw(clientMinIdx,
+    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype,vsrCliTyp>::TstMsgType, int vw) {
       return 0;
     }, false);
   std::vector<ParentMsgDispatcher> nwdispatchers {
     { 0, &buggynw }, { 1, &buggynw }, { 2, &buggynw }, { 3, &buggynw }, { 4, &buggynw },
+    { clientMinIdx, &buggynw },
   };
   std::vector<MockStateMachine> statemachines(5);
   std::vector<VSREtype> vsreps;
@@ -460,13 +534,16 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps.push_back({ 5, 2, nwdispatchers[2], statemachines[2] });
   vsreps.push_back({ 5, 3, nwdispatchers[3], statemachines[3] });
   vsreps.push_back({ 5, 4, nwdispatchers[4], statemachines[4] });
+  std::vector<vsrCliTyp> vsclients;
+  vsclients.push_back({ nwdispatchers[5] });
   buggynw.SetEnginesStart(std::vector<VSREtype*> {
-    &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4] });
+    &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4] },
+    std::vector<vsrCliTyp*> { &vsclients[0] });
   std::shared_ptr<void> buggynwDel(nullptr,
     [&buggynw](void*) { buggynw.CleanEnginesStop(); });
 
 
-  buggynw.SendMsg(-1, 2, MsgClientOp { 1212, "x=12" });
+  buggynw.SendMsg(-1, 2, MsgClientOp{ clientMinIdx, "x=12" });
   for (int i = 0; i < 151; ++i) {
     if (vsreps[0].CommitID() == 0
         // TODO: Normally we need only wait replica:0 CommitID but it has sporadic for now
@@ -489,7 +566,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   cout << "*** make replica:0 isolated (receive & send) -> Changes to view:1 automatically" << endl;
   buggynw.SetDecideFun(
-    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+    [](int from, int to, testMessageTyp, int vw) -> int {
       if (from == to) return 0;
       return from==0 || to==0;
     });
@@ -514,11 +591,11 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   }
   ASSERT_THAT(cnt, ::testing::Gt(3));
 
-  vsreps[0].ConsumeMsg(MsgClientOp { 1212, "x=to0_isolated0_v1-1314" });
+  vsreps[0].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to0_isolated0_v1-1314" });
   // re-join replica:0
   cout << "*** re-join replica:0" << endl;
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
+      [](int from, int to, testMessageTyp, int vw) { return 0; });
   for (int i = 0; i < 40; ++i) {
     if (vsreps[0].View() > 0 && vsreps[0].GetStatus() == Status::Normal) break;
     sleep_for(std::chrono::milliseconds(50));
@@ -532,11 +609,11 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   cout << "*** make replica:1 isolated (receive-only, block outgoing messages)" << endl;
 
   buggynw.SetDecideFun(
-    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+    [](int from, int to, testMessageTyp, int vw) -> int {
       if (from == to) return 0;
       return from==1;
     });
-  vsreps[1].ConsumeMsg(MsgClientOp { 1212, "x=to1_isolated1_v1to2-6655" });
+  vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to1_isolated1_v1to2-6655" });
   for (int i = 0; i < 100; ++i) {
     if (vsreps[0].View() > 1 && vsreps[0].GetStatus() == Status::Normal
         && vsreps[2].View() > 1 && vsreps[2].GetStatus() == Status::Normal
@@ -545,7 +622,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
       break;
     sleep_for(std::chrono::milliseconds(50));
   }
-  vsreps[2].ConsumeMsg(MsgClientOp { 1212, "x=to2_isolated1_v2-6655" });
+  vsreps[2].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" });
   ASSERT_EQ(1, vsreps[2].OpID());
   ASSERT_EQ(0, vsreps[2].CommitID());
   for (int i = 0; i < 21; ++i) {
@@ -557,8 +634,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   {
     const auto& logs = vsreps[2].GetCommittedLogs();
     ASSERT_EQ(logs.size(), 2);
-    ASSERT_EQ(std::make_pair(0, MsgClientOp { 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp { 1212, "x=to2_isolated1_v2-6655" }), logs.back());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" }), logs.back());
   }
 
   // Even replica:1 will adapt to new view since it can receive messages
@@ -582,22 +659,22 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
     ASSERT_EQ(vsreps[1].CommitID(), 1);
     const auto& logs = vsreps[1].GetCommittedLogs();
     ASSERT_EQ(logs.size(), 2);
-    ASSERT_EQ(std::make_pair(0, MsgClientOp{ 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp{ 1212, "x=to2_isolated1_v2-6655" }), logs.back());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" }), logs.back());
   }
 
   // make replica:1 messages pass to destinations, again
   cout << "*** make replica:1 messages pass to destinations, again" << endl;
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
+      [](int from, int to, testMessageTyp, int vw) { return 0; });
   // since replica:1 was isolated receive-only, it should have correct view ASAP, no poll needed
   ASSERT_EQ(2, vsreps[1].View());
   ASSERT_EQ(Status::Normal, vsreps[1].GetStatus());
   {
     const auto& logs = vsreps[1].GetCommittedLogs();
     ASSERT_EQ(logs.size(), 2);
-    ASSERT_EQ(std::make_pair(0, MsgClientOp{ 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp{ 1212, "x=to2_isolated1_v2-6655" }), logs.back());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" }), logs.back());
   }
 
   // --------------------------------------------------------------
@@ -605,7 +682,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   cout << "*** make replica:2-3 isolated (receive & send) -> Changes to view:4 automatically" << endl;
   buggynw.SetDecideFun(
-    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+    [](int from, int to, testMessageTyp, int vw) -> int {
       if (from == to) return 0;
       return from == 2 || to == 2 || from == 3 || to == 3;
     });
@@ -619,8 +696,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   {
     const auto& logs = vsreps[2].GetCommittedLogs();
     ASSERT_EQ(logs.size(), 2);
-    ASSERT_EQ(std::make_pair(0, MsgClientOp{ 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp{ 1212, "x=to2_isolated1_v2-6655" }), logs.back());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" }), logs.back());
   }
   for (int i = 0; i < 21; ++i) {
     if (vsreps[1].CommitID() > 0)
@@ -631,8 +708,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   {
     const auto& logs = vsreps[1].GetCommittedLogs();
     ASSERT_EQ(logs.size(), 2);
-    ASSERT_EQ(std::make_pair(0, MsgClientOp{ 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp{ 1212, "x=to2_isolated1_v2-6655" }), logs.back());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" }), logs.back());
   }
 
   ASSERT_EQ(4, vsreps[0].View());
@@ -645,7 +722,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // re-join replica:2-3
   cout << "*** re-join replica:2-3" << endl;
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
+      [](int from, int to, testMessageTyp, int vw) { return 0; });
   for (int i = 0; i < 20; ++i) {
     if (vsreps[2].View() > 3 && vsreps[2].GetStatus() == Status::Normal
         && vsreps[3].View() > 3 && vsreps[3].GetStatus() == Status::Normal)
@@ -662,11 +739,11 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   cout << "*** make replica:4-0 isolated: block send but not between 0 and 4" << endl;
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+      [](int from, int to, testMessageTyp, int vw) -> int {
         if (from == to) return 0;
         return (from == 4 && to != 0) || (from == 0 && to != 4); //from == 4 || from == 0;
       });
-  vsreps[4].ConsumeMsg(MsgClientOp { 1688, "xt=55" });
+  vsreps[4].ConsumeMsg(MsgClientOp{ clientMinIdx, "xt=55" });
   for (int i = 0; i < 100; ++i) {
     if (vsreps[1].View() > 5 && vsreps[1].GetStatus() == Status::Normal
         && vsreps[2].View() > 5 && vsreps[2].GetStatus() == Status::Normal
@@ -682,8 +759,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(6, vsreps[3].View());
   ASSERT_EQ(Status::Normal, vsreps[3].GetStatus());
 
-  vsreps[4].ConsumeMsg(MsgClientOp { 1688, "xt=to4_isolated40_v4to6-002" });
-  vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=75" });
+  vsreps[4].ConsumeMsg(MsgClientOp{ clientMinIdx, "xt=to4_isolated40_v4to6-002" });
+  vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "xu=75" });
   for (int i = 0; i < 21; ++i) {
     if (vsreps[1].CommitID() > 1) //vsreps[1].OpID() == vsreps[1].CommitID()
       break;
@@ -693,17 +770,17 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   {
     const auto& logs = vsreps[1].GetCommittedLogs();
     ASSERT_GT(logs.size(), 2);
-    ASSERT_EQ(std::make_pair(0, MsgClientOp{ 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp{ 1212, "x=to2_isolated1_v2-6655"}), logs[1]);
-    ASSERT_EQ(std::make_pair(2, MsgClientOp { 5908, "xu=75" }), logs.back());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655"}), logs[1]);
+    ASSERT_EQ(std::make_pair(2, MsgClientOp{ clientMinIdx, "xu=75" }), logs.back());
   }
   ASSERT_EQ(2, vsreps[1].CommitID());
 
   // re-join replica:4-0
   cout << "*** re-join replica:4-0" << endl;
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
-  vsreps[1].ConsumeMsg(MsgClientOp { 5908, "xu=to1_joining40_beforeisolating12_v6-004" });
+      [](int from, int to, testMessageTyp, int vw) { return 0; });
+  vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "xu=to1_joining40_beforeisolating12_v6-004" });
   ASSERT_EQ(3, vsreps[1].OpID());
   ASSERT_EQ(2, vsreps[1].CommitID());
   for (int i = 0; i < 20; ++i) {
@@ -735,7 +812,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   cout << "*** make replica:1-2 an island of network separate from the rest" << endl;
 
   buggynw.SetDecideFun(
-    [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) -> int {
+    [](int from, int to, testMessageTyp, int vw) -> int {
       if (from == to) return 0;
       if ((from == 1 && to == 2) || (from == 2 && to == 1)) return 0;
       if ((from == 1 && to != 2) || (from == 2 && to != 1)) return 1;
@@ -764,7 +841,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // Separated leader should not be able to commit an op without consensus followers
   ASSERT_EQ(3, vsreps[2].CommitID());
   ASSERT_EQ(3, vsreps[2].CommitID());
-  vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=to1_separated12_v6to8" });
+  vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to1_separated12_v6to8" });
   ASSERT_EQ(4, vsreps[1].OpID());
   ASSERT_EQ(3, vsreps[1].CommitID());
   for (int i = 0; i < 21; ++i) {
@@ -775,8 +852,8 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   }
   ASSERT_EQ(3, vsreps[2].CommitID());
   // Meanwhile the island of leader should be able to persist ops
-  vsreps[1].ConsumeMsg(MsgClientOp { 1568, "x=to1_isolated12_v6to8-1232" });
-  vsreps[3].ConsumeMsg(MsgClientOp { 1571, "y=to3_isolated12_v8-1563" });
+  vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to1_isolated12_v6to8-1232" });
+  vsreps[3].ConsumeMsg(MsgClientOp{ clientMinIdx, "y=to3_isolated12_v8-1563" });
   ASSERT_EQ(4, vsreps[3].OpID());
   ASSERT_EQ(3, vsreps[3].CommitID());
   for (int i = 0; i < 21; ++i) {
@@ -794,7 +871,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   // --------------------------------------------------------------
   cout << "*** re-join replica:1-2 (join them to majority island)" << endl;
   buggynw.SetDecideFun(
-      [](int from, int to, FakeTMsgBuggyNetwork<VSREtype>::TstMsgType, int vw) { return 0; });
+      [](int from, int to, testMessageTyp, int vw) { return 0; });
   for (int i = 0; i < 20; ++i) {
     if (vsreps[1].View() > 6 && vsreps[1].GetStatus() == Status::Normal
         && vsreps[2].View() > 6 && vsreps[2].GetStatus() == Status::Normal)
@@ -819,20 +896,20 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   {
     auto&& logs = vsreps[1].GetCommittedLogs();
     ASSERT_EQ(5, logs.size());
-    ASSERT_EQ(std::make_pair(0, MsgClientOp { 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp { 1212, "x=to2_isolated1_v2-6655" }), logs[1]);
-    ASSERT_EQ(std::make_pair(2, MsgClientOp { 5908, "xu=75" }), logs[2]);
-    ASSERT_EQ(std::make_pair(3, MsgClientOp { 5908, "xu=to1_joining40_beforeisolating12_v6-004" }), logs[3]);
-    ASSERT_EQ(std::make_pair(4, MsgClientOp { 1571, "y=to3_isolated12_v8-1563" }), logs[4]);
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" }), logs[1]);
+    ASSERT_EQ(std::make_pair(2, MsgClientOp{ clientMinIdx, "xu=75" }), logs[2]);
+    ASSERT_EQ(std::make_pair(3, MsgClientOp{ clientMinIdx, "xu=to1_joining40_beforeisolating12_v6-004" }), logs[3]);
+    ASSERT_EQ(std::make_pair(4, MsgClientOp{ clientMinIdx, "y=to3_isolated12_v8-1563" }), logs[4]);
   }
   {
     auto&& logs = vsreps[0].GetCommittedLogs();
     ASSERT_EQ(5, logs.size());
-    ASSERT_EQ(std::make_pair(0, MsgClientOp { 1212, "x=12" }), logs[0]);
-    ASSERT_EQ(std::make_pair(1, MsgClientOp { 1212, "x=to2_isolated1_v2-6655" }), logs[1]);
-    ASSERT_EQ(std::make_pair(2, MsgClientOp { 5908, "xu=75" }), logs[2]);
-    ASSERT_EQ(std::make_pair(3, MsgClientOp { 5908, "xu=to1_joining40_beforeisolating12_v6-004" }), logs[3]);
-    ASSERT_EQ(std::make_pair(4, MsgClientOp { 1571, "y=to3_isolated12_v8-1563" }), logs[4]);
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12" }), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655" }), logs[1]);
+    ASSERT_EQ(std::make_pair(2, MsgClientOp{ clientMinIdx, "xu=75" }), logs[2]);
+    ASSERT_EQ(std::make_pair(3, MsgClientOp{ clientMinIdx, "xu=to1_joining40_beforeisolating12_v6-004" }), logs[3]);
+    ASSERT_EQ(std::make_pair(4, MsgClientOp{ clientMinIdx, "y=to3_isolated12_v8-1563" }), logs[4]);
   }
 }
 

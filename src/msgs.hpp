@@ -77,6 +77,20 @@ struct MsgMissingLogsResponse {
     unsigned hashoflast;
 };
 
+struct MsgPersistedCliOp {
+    int view;
+    uint64_t cliopid;
+};
+
+struct MsgOpPersistedQuery {
+    MsgPersistedCliOp perscliop;
+};
+
+struct MsgOpPersistedResponse {
+    std::string err;
+    MsgPersistedCliOp perscliop;
+    bool exists;
+};
 }
 
 #endif

@@ -283,8 +283,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
       cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) committing op:" << op_
            << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
       logs_.push_back(cliop);
-      dispatcher_.SendToClient(cliop.second.clientid,
-          MsgPersistedCliOp{view_, cliop.second.cliopid});
+      dispatcher_.SendToClient(cliop.second.clientid, MsgPersistedCliOp{view_, cliop.second.cliopid});
     }
     log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   }

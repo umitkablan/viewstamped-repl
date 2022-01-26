@@ -292,6 +292,8 @@ TEST(CoreTest, LeaderPrepareTimeouts)
   // When ClientOp is received before Tick we optimize Prepare's
   {
     cr.ConsumeMsg(MsgClientOp { 1278, "dd=oprea", 789 });
+    ASSERT_EQ(2, cr.OpID());
+    ASSERT_EQ(1, cr.CommitID());
     ASSERT_EQ(4, recv.size());
     for (int i = 0; i < recv.size(); ++i) {
       ASSERT_EQ(i + 1, recv[i].first);
@@ -301,6 +303,8 @@ TEST(CoreTest, LeaderPrepareTimeouts)
     cr.HealthTimeoutTicked();
     ASSERT_EQ(0, recv.size()); // nothing sent
     cr.ConsumeMsg(MsgClientOp { 1278, "ed=oea", 790 }); // not sent
+    ASSERT_EQ(2, cr.OpID());
+    ASSERT_EQ(1, cr.CommitID());
     ASSERT_EQ(0, recv.size());
   }
 }

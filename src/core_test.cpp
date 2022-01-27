@@ -543,7 +543,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
     [&buggynw](void*) { buggynw.CleanEnginesStop(); });
 
 
-  buggynw.SendMsg(-1, 2, MsgClientOp{ clientMinIdx, "x=12" });
+  buggynw.SendMsg(-1, 0, MsgClientOp{ clientMinIdx, "x=12" });
   for (int i = 0; i < 151; ++i) {
     if (vsreps[0].CommitID() == 0
         // TODO: Normally we need only wait replica:0 CommitID but it has sporadic for now

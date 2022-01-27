@@ -146,18 +146,24 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+std::variant<std::monostate, MsgLeaderRedirect, int>
+ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     const MsgClientOp& msg)
 {
   cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.toString()
        << " commit:" << op_ << "/" << commit_ << endl;
+
+  std::variant<std::monostate, MsgLeaderRedirect, int> ret;
   if ((view_ % totreplicas_) != replica_) {
-    dispatcher_.SendMsg(view_ % totreplicas_, msg);
-    return 0;
+    ret = MsgLeaderRedirect{view_, view_%totreplicas_};
+    return ret;
   }
 
-  if (op_ != commit_ || status_ != Status::Normal) // failed, retry
-    return -1;
+  if (op_ != commit_ || status_ != Status::Normal) { // not ready, retry
+    ret = -1;
+    return ret;
+  }
+
   ++op_;
   cliop_ = msg;
   latest_healthtick_received_ = healthcheck_tick_;
@@ -165,8 +171,8 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   for (int i=0; i<totreplicas_; ++i)
     if (i != replica_)
       dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, log_hash_, msg });
-
-  return 0;
+  ret = 0;
+  return ret;
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>

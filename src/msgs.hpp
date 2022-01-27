@@ -29,6 +29,11 @@ struct MsgClientOp {
   }
 };
 
+struct MsgLeaderRedirect {
+    int view;
+    int leader;
+};
+
 struct MsgPrepare {
   int view;
   int op;

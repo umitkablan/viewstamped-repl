@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <thread>
+#include <variant>
 
 namespace vsrepl {
 
@@ -22,7 +23,8 @@ public:
   void Start();
   void Stop();
 
-  int ConsumeMsg(const MsgClientOp&);
+  std::variant<std::monostate, MsgLeaderRedirect, int>
+    ConsumeMsg(const MsgClientOp&);
   int ConsumeMsg(int from, const MsgStartViewChange&);
   int ConsumeMsg(int from, const MsgDoViewChange&);
   MsgStartViewResponse ConsumeMsg(int from, const MsgStartView&);

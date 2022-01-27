@@ -155,7 +155,9 @@ public:
       auto ret = callDecideSync(from, to, TstMsgType::ClientOp, -1);
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
-        ret = engines_[to]->ConsumeMsg(cliop);
+        const auto v = engines_[to]->ConsumeMsg(cliop);
+        if (std::holds_alternative<int>(v)) ret = std::get<int>(v);
+        else ret = -551;
       }
       return ret;
     });

@@ -192,9 +192,9 @@ public:
     enqueueTask(pts_, [from, to, sv, this]() {
       auto ret = callDecideSync(from, to, TstMsgType::StartView, sv.view);
       MsgStartViewResponse svr{ sv.view, "failxd-13 network" };
-      cout << "tf:" << to << "," << from << endl;
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
+        cout << "t:" << to << endl;
         svr = engines_[to]->ConsumeMsg(from, sv);
       } else
         return ret;
@@ -202,6 +202,7 @@ public:
       ret = callDecideSync(to, from, TstMsgType::StartViewResponse, sv.view);
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[from]);
+        cout << "f:" << from << endl;
         return engines_[from]->ConsumeReply(to, svr);
       }
       return ret;

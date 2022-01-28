@@ -48,6 +48,8 @@ int VSReplCli<TMsgDispatcher>::DeleteOpID(unsigned opID)
   const auto it = opmap_.find(opID);
   if (it == opmap_.end()) 
     return -1;
+  if (it->second.st != OpState::Consumed && it->second.st != OpState::DoesntExist)
+    return -2;
   opmap_.erase(it);
   return 0;
 }

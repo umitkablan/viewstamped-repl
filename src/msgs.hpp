@@ -10,7 +10,7 @@
 namespace vsrepl {
 
 struct MsgClientOp {
-  int clientid;
+  unsigned clientid;
   std::string opstr;
   uint64_t cliopid; // prevents opstr to re-execute together with clientid
 

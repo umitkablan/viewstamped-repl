@@ -916,56 +916,56 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 
 TEST(VsReplClientInBuggyNetwork, Client_Scenarios)
 {
-  // using vsreTyp = ViewstampedReplicationEngine<ParentMsgDispatcher, MockStateMachine>;
-  // using vsrCliTyp = VSReplCli<ParentMsgDispatcher>;
-  // using testMessageTyp = FakeTMsgBuggyNetwork<vsreTyp,vsrCliTyp>::TstMsgType;
-  // using cliOpStatusTyp = typename vsrCliTyp::OpState;
-  // const int clientMinIdx = 50;
-  //
-  // FakeTMsgBuggyNetwork<vsreTyp, vsrCliTyp> buggynw(clientMinIdx,
-  //   [](int from, int to, testMessageTyp, int view) {
-  //     return 0;
-  //   }, false);
-  // std::vector<ParentMsgDispatcher> nwdispatchers {
-  //   {0, &buggynw}, {1, &buggynw}, {2, &buggynw}, {3, &buggynw}, {4, &buggynw}, {5, &buggynw}, {6, &buggynw},
-  //   {clientMinIdx, &buggynw}, {clientMinIdx+1, &buggynw},
-  // };
-  // std::vector<MockStateMachine> statemachines(7);
-  // std::vector<vsreTyp> vsreps;
-  // vsreps.reserve(7); // we need explicit push_back due to copy constructor absence
-  // vsreps.push_back({7, 0, nwdispatchers[0], statemachines[0]});
-  // vsreps.push_back({7, 1, nwdispatchers[1], statemachines[1]});
-  // vsreps.push_back({7, 2, nwdispatchers[2], statemachines[2]});
-  // vsreps.push_back({7, 3, nwdispatchers[3], statemachines[3]});
-  // vsreps.push_back({7, 4, nwdispatchers[4], statemachines[4]});
-  // vsreps.push_back({7, 5, nwdispatchers[5], statemachines[5]});
-  // vsreps.push_back({7, 6, nwdispatchers[6], statemachines[6]});
-  // std::vector<vsrCliTyp> vsclients;
-  // vsclients.reserve(2);
-  // vsclients.push_back( { clientMinIdx,   nwdispatchers[7], int(vsreps.size()) });
-  // vsclients.push_back( { clientMinIdx+1, nwdispatchers[8], int(vsreps.size()) });
-  // buggynw.SetEnginesStart(
-  //   std::vector<vsreTyp*>{
-  //     &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4], &vsreps[5], &vsreps[6] },
-  //   std::vector<vsrCliTyp*>{
-  //     &vsclients[0], &vsclients[1] });
-  // std::shared_ptr<void> buggynwDel(nullptr,
-  //   [&buggynw](void*) { buggynw.CleanEnginesStop(); });
-  //
-  // // --------------------------------------------------------------
-  // // default case, initial state: consume op using client
-  // // --------------------------------------------------------------
-  // const auto opid0 = vsclients[1].InitOp("cli1=opid0");
-  // auto st = vsclients[1].StartOp(opid0);
-  // ASSERT_EQ(cliOpStatusTyp::JustStarted, st);
-  // for (int i=0; i<21; ++i) {
-  //   ASSERT_NE(20, i);
-  //   st = vsclients[1].StartOp(opid0);
-  //   if (st == cliOpStatusTyp::Consumed) break;
-  //   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  // }
-  // auto res = vsclients[1].DeleteOpID(opid0);
-  // ASSERT_EQ(0, res);
+  using vsreType = ViewstampedReplicationEngine<ParentMsgDispatcher, MockStateMachine>;
+  using vsrCliType = VSReplCli<ParentMsgDispatcher>;
+  using testMessageType = FakeTMsgBuggyNetwork<vsreType,vsrCliType>::TstMsgType;
+  using cliOpStatusType = typename vsrCliType::OpState;
+  const int clientMinIndex = 50;
+
+  FakeTMsgBuggyNetwork<vsreType, vsrCliType> buggynet(clientMinIndex,
+    [](int from, int to, testMessageType, int view) {
+      return 0;
+    }, false);
+  std::vector<ParentMsgDispatcher> disps {
+    {0, &buggynet}, {1, &buggynet}, {2, &buggynet}, {3, &buggynet}, {4, &buggynet}, {5, &buggynet}, {6, &buggynet},
+    {clientMinIndex, &buggynet}, {clientMinIndex+1, &buggynet},
+  };
+  std::vector<MockStateMachine> sms(7);
+  std::vector<vsreType> vsreps;
+  vsreps.reserve(7); // we need explicit push_back due to copy constructor absence
+  vsreps.push_back({7, 0, disps[0], sms[0]});
+  vsreps.push_back({7, 1, disps[1], sms[1]});
+  vsreps.push_back({7, 2, disps[2], sms[2]});
+  vsreps.push_back({7, 3, disps[3], sms[3]});
+  vsreps.push_back({7, 4, disps[4], sms[4]});
+  vsreps.push_back({7, 5, disps[5], sms[5]});
+  vsreps.push_back({7, 6, disps[6], sms[6]});
+  std::vector<vsrCliType> vsclients;
+  vsclients.reserve(2);
+  vsclients.push_back( { clientMinIndex,   disps[7], int(vsreps.size()) });
+  vsclients.push_back( { clientMinIndex+1, disps[8], int(vsreps.size()) });
+  buggynet.SetEnginesStart(
+    std::vector<vsreType*>{
+      &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4], &vsreps[5], &vsreps[6] },
+    std::vector<vsrCliType*>{
+      &vsclients[0], &vsclients[1] });
+  std::shared_ptr<void> buggynwDel(nullptr,
+    [&buggynet](void*) { buggynet.CleanEnginesStop(); });
+
+  // --------------------------------------------------------------
+  // default case, initial state: consume op using client
+  // --------------------------------------------------------------
+  const auto opid0 = vsclients[1].InitOp("cli1=opid0");
+  auto st = vsclients[1].StartOp(opid0);
+  ASSERT_EQ(cliOpStatusType::JustStarted, st);
+  for (int i=0; i<21; ++i) {
+    ASSERT_NE(20, i);
+    st = vsclients[1].StartOp(opid0);
+    if (st == cliOpStatusType::Consumed) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  auto res = vsclients[1].DeleteOpID(opid0);
+  ASSERT_EQ(0, res);
 }
 
 

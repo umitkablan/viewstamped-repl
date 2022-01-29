@@ -243,11 +243,18 @@ template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     int from, const MsgStartViewResponse& svresp)
 {
+  cout << replica_ << ":" << view_ << "<-" << from << " (SVCResp) lastcommit:"
+       << svresp.last_commit << endl;
   if ((view_ % totreplicas_) != replica_) {
     cout << replica_ << ":" << view_ << "<-" << from << " (SVCResp) "
         << " lastcommit:" << svresp.last_commit << "; I am not the Leader " << endl;
     return -1;
   }
+  if (!svresp.err.empty()) {
+    cout << replica_ << ":" << view_ << "<-" << from << " (SVCResp) err:" << svresp.err << endl;
+    return -2;
+  }
+
   auto [isdup, idx] = checkDuplicate(trackDups_SVResps_, from, svresp.view);
   if (isdup)
     return 0; // double sent

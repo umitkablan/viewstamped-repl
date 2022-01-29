@@ -23,4 +23,4 @@ jobs:
       run: cmake --build build/${{env.BUILD_TYPE}} && cmake --install build/${{env.BUILD_TYPE}} --prefix bin/
     - name: Run Unit Tests
       working-directory: ${{github.workspace}}
-      run: ASAN_OPTIONS=detect_container_overflow=0 ./bin/bin/core_test --gtest_repeat=50 --gtest_break_on_failure
+      run: ./bin/bin/core_test --gtest_repeat=50 --gtest_break_on_failure

@@ -286,7 +286,7 @@ private:
   std::mutex decide_mtx_;
   std::function<int(int, int, TstMsgType, int)> decide_;
 
-  bool break_thread_;
+  volatile bool break_thread_;
   std::thread th_;
 
   mutable std::mutex packs_mtx_;
@@ -348,7 +348,7 @@ private:
     while(true) {
       auto [found, pt] = popLastOf(pts_);
       if (!found) break;
-      std::thread([p = std::move(pt)]() mutable { p(); }).detach();
+      std::thread([p = std::move(pt)]() mutable { p(); }).join();
     }
     return pts_.size();
   }

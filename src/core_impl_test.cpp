@@ -123,7 +123,9 @@ public:
     clients_ = std::move(clients);
 
     break_thread_ = false;
+    cout << "SetEngineStart before threadTask()" << endl;
     th_ = std::thread([this]() { threadTask(); });
+    cout << "SetEngineStart before e->Start()s" << endl;
     for (auto& e : engines_)
       e->Start();
   }

@@ -354,7 +354,7 @@ private:
     while(true) {
       auto [found, pt] = popLastOf(pts_);
       if (!found) break;
-      std::thread([p = std::move(pt)]() mutable { p(); }).detach();
+      std::thread([p = std::move(pt)]() mutable { p(); }).join();
     }
     return pts_.size();
   }

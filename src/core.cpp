@@ -243,8 +243,6 @@ template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     int from, const MsgStartViewResponse& svresp)
 {
-  cout << replica_ << ":" << view_ << "<-" << from << " (SVCResp) lastcommit:"
-       << svresp.last_commit << endl;
   if ((view_ % totreplicas_) != replica_) {
     cout << replica_ << ":" << view_ << "<-" << from << " (SVCResp) "
         << " lastcommit:" << svresp.last_commit << "; I am not the Leader " << endl;

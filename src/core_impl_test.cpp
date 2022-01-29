@@ -123,26 +123,20 @@ public:
     clients_ = std::move(clients);
 
     break_thread_ = false;
-    cout << "SetEngineStart before threadTask()" << endl;
     th_ = std::thread([this]() { threadTask(); });
-    cout << "SetEngineStart before e->Start()s" << endl;
     for (auto& e : engines_)
       e->Start();
   }
 
   void CleanEnginesStop()
   {
-    cout << "stop all engines" << endl;
     for (auto& e : engines_)
       e->Stop();
 
     break_thread_ = true;
-    cout << "break thred join.." << endl;
     if (th_.joinable())
       th_.join();
-    cout << "finishEnqueuedTasks" << endl;
     finishEnqueuedTasks();
-    cout << "finishEnqueuedTasks DONE" << endl;
 
     engines_.clear();
     engines_mtxs_.clear();

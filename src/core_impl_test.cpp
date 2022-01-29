@@ -292,7 +292,7 @@ private:
   std::mutex decide_mtx_;
   std::function<int(int, int, TstMsgType, int)> decide_;
 
-  bool break_thread_;
+  volatile bool break_thread_;
   std::thread th_;
 
   mutable std::mutex packs_mtx_;

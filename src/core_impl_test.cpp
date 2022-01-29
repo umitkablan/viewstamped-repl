@@ -132,13 +132,17 @@ public:
 
   void CleanEnginesStop()
   {
+    cout << "stop all engines" << endl;
     for (auto& e : engines_)
       e->Stop();
 
     break_thread_ = true;
+    cout << "break thred join.." << endl;
     if (th_.joinable())
       th_.join();
+    cout << "finishEnqueuedTasks" << endl;
     finishEnqueuedTasks();
+    cout << "finishEnqueuedTasks DONE" << endl;
 
     engines_.clear();
     engines_mtxs_.clear();

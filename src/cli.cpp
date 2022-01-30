@@ -44,7 +44,7 @@ VSReplCli<TMsgDispatcher>::InitOp(const std::string& opstr)
 {
   auto ret = last_op_id_++;
   opmap_.insert(std::make_pair(ret, opStruct{ opstr, OpState::DoesntExist, 0,
-        last_view_ % totreplicas_ }));
+        (last_view_ + 1) % totreplicas_ }));
   return ret;
 }
 
@@ -97,9 +97,11 @@ void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgLeaderRedirect& 
     << " leader:" << msgleaderredir.leader << endl;
   if (!setView(msgleaderredir.view))
     return;
-  for (auto& p : opmap_)
+  for (auto& p : opmap_) {
+    p.second.lastrep = -1;
     if (p.second.st != OpState::DoesntExist && p.second.st != OpState::Consumed)
       dispatcher_.SendMsg(last_view_%totreplicas_, MsgClientOp{client_id_, p.second.str, p.first});
+  }
 }
 
 template <typename TMsgDispatcher>
@@ -124,7 +126,8 @@ void VSReplCli<TMsgDispatcher>::TimeTick()
   for (auto& p : opmap_) {
     p.second.tick_cnt += 1;
     if (p.second.tick_cnt >= timeout_tick_) {
-      p.second.lastrep = (p.second.lastrep + 1) % totreplicas_;
+      if (p.second.lastrep == -1) p.second.lastrep = last_view_ % totreplicas_;
+      else p.second.lastrep = (p.second.lastrep + 1) % totreplicas_;
       p.second.tick_cnt = 0;
       dispatcher_.SendMsg(p.second.lastrep, MsgClientOp{client_id_, p.second.str, p.first});
     }

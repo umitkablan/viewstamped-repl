@@ -17,6 +17,7 @@ VSReplCli<TMsgDispatcher>::VSReplCli(unsigned client_id, TMsgDispatcher& dp, int
   , last_view_(0)
   , last_op_id_(7)
   , tick_interval_(tick_interval)
+  , continue_timetick_(false)
   , timeout_tick_(timeout_tick)
 {
 }

@@ -203,7 +203,6 @@ TEST(CoreTest, LeaderSendsPrepare)
 
   { // When ClientOp is received before Tick we optimize Prepare's
     for (int i = 0; i < 20; ++i) {
-      cout << "1111" << endl;
       cr.ConsumeMsg(MsgClientOp { 1231, "x=y", uint64_t(i + 18) });
       ASSERT_THAT(res, ElementsAre(1, 2, 3, 4));
       res.clear();

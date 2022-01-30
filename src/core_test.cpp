@@ -987,7 +987,7 @@ TEST(CliTest, ClientBasicTimeout)
   cli0.ConsumeCliMsg(leader+1, MsgPersistedCliOp{view, opid0});
   cli0.TimeTick();
   ASSERT_EQ(1, sent_cliops.size());
-  ASSERT_EQ(leader + 2, sent_cliops[0].first);
+  ASSERT_EQ(leader+1, sent_cliops[0].first);
   ASSERT_EQ(35, sent_cliops[0].second.clientid);
   ASSERT_EQ("op0", sent_cliops[0].second.opstr);
   ASSERT_EQ(opid0, sent_cliops[0].second.cliopid);
@@ -999,7 +999,7 @@ TEST(CliTest, ClientBasicTimeout)
   cli0.TimeTick();
   cli0.TimeTick();
   ASSERT_EQ(1, sent_cliops.size());
-  ASSERT_EQ(leader+3, sent_cliops[0].first);
+  ASSERT_EQ(leader+2, sent_cliops[0].first);
   ASSERT_EQ(35, sent_cliops[0].second.clientid);
   ASSERT_EQ("op0", sent_cliops[0].second.opstr);
   ASSERT_EQ(opid0, sent_cliops[0].second.cliopid);

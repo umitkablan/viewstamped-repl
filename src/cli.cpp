@@ -44,7 +44,7 @@ VSReplCli<TMsgDispatcher>::InitOp(const std::string& opstr)
 {
   auto ret = last_op_id_++;
   opmap_.insert(std::make_pair(ret, opStruct{ opstr, OpState::DoesntExist, 0,
-        (last_view_ + 1) % totreplicas_ }));
+        last_view_ % totreplicas_ }));
   return ret;
 }
 

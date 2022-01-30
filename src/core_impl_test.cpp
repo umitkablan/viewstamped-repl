@@ -109,6 +109,7 @@ public:
     : random_chose_border_((RAND_MAX / 3) * 2)
     , clientMinIndex_(cliMinIdx)
     , is_shuffle_(shuffle)
+    , active_thread_cnt_(0)
     , decide_(decFun)
     , break_thread_(false)
   {
@@ -305,6 +306,7 @@ private:
   int random_chose_border_;
   int clientMinIndex_;
   bool is_shuffle_;
+  std::atomic_int active_thread_cnt_;
   std::vector<ViewStampedReplEngine*> engines_;
   std::vector<VSReplCli*> clients_;
   std::vector<std::mutex> engines_mtxs_;
@@ -363,13 +365,19 @@ private:
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       auto [found, pt] = popLastOf(pts_);
       if (found) {
-        std::thread([p = std::move(pt)]() mutable { p(); }).detach();
+        ++active_thread_cnt_;
+        std::thread([this, p = std::move(pt)]() mutable {
+          p();
+          --active_thread_cnt_;
+        }).detach();
       }
     }
   }
 
   int finishEnqueuedTasks()
   {
+    while(active_thread_cnt_ > 0)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
     while(true) {
       auto [found, pt] = popLastOf(pts_);
       if (!found) break;

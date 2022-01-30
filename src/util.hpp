@@ -1,29 +1,21 @@
-#ifndef VSTAMPED_REPL_UTIL_H
-#define VSTAMPED_REPL_UTIL_H
+#ifndef VSREPL_UTIL_INCLUDED
+#define VSREPL_UTIL_INCLUDED
 
-#include <iostream>
-#include <mutex>
+#include <functional>
+#include <utility>
 
-template <typename... Args>
-void Print0();
-
-template <>
-void Print0<>() {}
-
-template <typename T, typename... Args>
-void Print0(const T& a, Args... args)
+namespace vsrepl
 {
-  std::cout << a;
-  Print0(std::forward<Args>(args)...);
-}
 
-template <typename... Args>
-void PrintSync(Args... args)
-{
-  extern std::mutex cout_mtx;
+struct PairHasher {
+  template <typename T1, typename T2>
+  std::size_t operator()(const std::pair<T1,T2>& pp) const noexcept {
+    const auto h1 = std::hash<T1>{}(pp.first);
+    const auto h2 = std::hash<T2>{}(pp.second);
+    return h1 ^ h2;
+  }
+};
 
-  std::lock_guard<std::mutex> lck(cout_mtx);
-  Print0(std::forward<Args>(args)...);
 }
 
 #endif

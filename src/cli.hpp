@@ -3,7 +3,10 @@
 
 #include "msgs.hpp"
 
+#include <chrono>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace vsrepl
 {
@@ -19,7 +22,11 @@ public:
     Consumed,
   };
 
-  VSReplCli(unsigned client_id, TMsgDispatcher& dp, int totreplicas);
+  VSReplCli(unsigned client_id, TMsgDispatcher& dp, int totreplicas,
+      int timeout_tick = 5, std::chrono::milliseconds = std::chrono::milliseconds(100));
+
+  void Start();
+  void Stop();
 
   // returns a unique opID associated with opstr
   unsigned InitOp(const std::string& opstr);
@@ -29,17 +36,21 @@ public:
   int DeleteOpID(unsigned opID);
 
   void ConsumeCliMsg(int from, const MsgPersistedCliOp&);
-  int ConsumeReply(int from, const MsgOpPersistedResponse&);
   void ConsumeReply(int from, const MsgLeaderRedirect&);
+  void ConsumeReply(int from, const MsgPersistedCliOp&);
+
+  void TimeTick();
 
 private:
   struct opStruct {
     std::string str;
     OpState st;
-    unsigned tot_received;
+    uint16_t tick_cnt;
+    int lastrep;
+    std::unordered_set<unsigned> recv_replicas_;
   };
 
-  void setView(int view);
+  bool setView(int view);
 
 private:
   const unsigned client_id_;
@@ -50,6 +61,14 @@ private:
   int last_view_;
   unsigned last_op_id_;
   std::unordered_map<unsigned, opStruct> opmap_;
+
+  private:
+    void timeTickThread();
+
+    std::chrono::milliseconds tick_interval_;
+    int timeout_tick_;
+    volatile bool continue_timetick_;
+    std::thread timeTickThread_;
 };
 
 }

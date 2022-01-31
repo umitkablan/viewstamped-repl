@@ -1041,8 +1041,7 @@ TEST(VsReplClientInBuggyNetwork, Client_Scenarios)
   auto vsc0 = std::make_unique<vsrCliTyp>(clientMinIdx,   disps[5], int(vsreps.size()));
   auto vsc1 = std::make_unique<vsrCliTyp>(clientMinIdx+1, disps[6], int(vsreps.size()));
   buggynet.SetEnginesStart(
-    std::vector<vsreTyp*>{
-      &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4], &vsreps[5], &vsreps[6] },
+    std::vector<vsreTyp*>{ &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4] },
     std::vector<vsrCliTyp*>{ vsc0.get(), vsc1.get() });
   std::shared_ptr<void> buggynwDel(nullptr,
     [&buggynet](void*) { buggynet.CleanEnginesStop(); });

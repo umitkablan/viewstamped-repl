@@ -13,6 +13,7 @@ struct MsgClientOp {
   unsigned clientid;
   std::string opstr;
   uint64_t cliopid; // prevents opstr to re-execute together with clientid
+  bool dont_notify;
 
   std::string toString() const {
     return std::to_string(clientid) + "/" + std::to_string(cliopid) + "/" + opstr;
@@ -91,11 +92,6 @@ struct MsgOpPersistedQuery {
   MsgPersistedCliOp perscliop;
 };
 
-struct MsgOpPersistedResponse {
-  std::string err;
-  MsgPersistedCliOp perscliop;
-  bool exists;
-};
 }
 
 #endif

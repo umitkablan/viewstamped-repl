@@ -67,11 +67,17 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     1);
 
   if (cnt > totreplicas_ / 2) { // include self...
-    status_ = Status::Change;
-    view_ = msgsvc.view;
-    op_ = commit_;
-    healthcheck_tick_ = latest_healthtick_received_;
-    dispatcher_.SendMsg(msgsvc.view % totreplicas_, MsgDoViewChange { msgsvc.view });
+    if (view_ < msgsvc.view) {
+      cout << replica_ << ":" << view_ << "<-" << from << " (SVC) consensus[" << cnt << "] v:"
+           << msgsvc.view << endl;
+      status_ = Status::Change;
+      view_ = msgsvc.view;
+      op_ = commit_;
+    }
+    if (view_ == msgsvc.view) {
+      healthcheck_tick_ = latest_healthtick_received_;
+      dispatcher_.SendMsg(msgsvc.view % totreplicas_, MsgDoViewChange { msgsvc.view });
+    }
   } else if (msgsvc.view == view_ + 1
       && healthcheck_tick_ > latest_healthtick_received_
       && healthcheck_tick_ - latest_healthtick_received_ < 3) {
@@ -103,7 +109,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   cout << replica_ << ":" << view_ << "<-" << from << " (DoVC) consensus[" << cnt << "] for v:" << dvc.view << endl;
   view_ = dvc.view;
   op_ = commit_;
-  // status_ = Status::Normal;
+  status_ = Status::Change;
 
   healthcheck_tick_ = latest_healthtick_received_;
   for (int i = 0; i < totreplicas_; ++i) {
@@ -146,14 +152,26 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-std::variant<std::monostate, MsgLeaderRedirect, int>
+std::variant<MsgLeaderRedirect, MsgPersistedCliOp, int>
 ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     const MsgClientOp& msg)
 {
   cout << replica_ << ":" << view_ << " (CliOp) " << msg.clientid << " msg.opstr:" << msg.toString()
        << " commit:" << op_ << "/" << commit_ << endl;
+  std::variant<MsgLeaderRedirect, MsgPersistedCliOp, int> ret = 0;
 
-  std::variant<std::monostate, MsgLeaderRedirect, int> ret;
+  if (persisted_ops_.count(std::make_pair(msg.clientid, msg.cliopid))) {
+    ret = MsgPersistedCliOp{view_, msg.cliopid};
+    if (msg.dont_notify)
+      return ret;
+    auto mm = msg;
+    mm.dont_notify = true;
+    for (int i=0; i<totreplicas_; ++i)
+      if (i != replica_) // not myself, I've already responded in ret
+        dispatcher_.SendMsg(i, mm);
+    return ret;
+  }
+
   if ((view_ % totreplicas_) != replica_) {
     ret = MsgLeaderRedirect{view_, view_%totreplicas_};
     return ret;
@@ -171,7 +189,6 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   for (int i=0; i<totreplicas_; ++i)
     if (i != replica_)
       dispatcher_.SendMsg(i, MsgPrepare { view_, op_, commit_, log_hash_, msg });
-  ret = 0;
   return ret;
 }
 
@@ -216,12 +233,15 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 
   if (msgpr.commit == op_) {
     if (op_ > commit_) {
-      cout << replica_ << ":" << view_ << "<-" << from << " (PREP) committing op:" << op_
-           << " cliop:" << cliop_.toString() << " sz:" << logs_.size() << endl;
-      logs_.push_back(std::make_pair(op_, cliop_));
-      commit_ = op_;
-      log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
-      dispatcher_.SendToClient(cliop_.clientid, MsgPersistedCliOp{view_, cliop_.cliopid});
+      if (persisted_ops_.count(std::make_pair(cliop_.clientid, cliop_.cliopid)) == 0) {
+        cout << replica_ << ":" << view_ << "<-" << from << " (PREP) committing op:" << op_
+             << " cliop:" << cliop_.toString() << " sz:" << logs_.size() << endl;
+        logs_.push_back(std::make_pair(op_, cliop_));
+        commit_ = op_;
+        log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
+        persisted_ops_.insert(std::make_pair(cliop_.clientid, cliop_.cliopid));
+        dispatcher_.SendToClient(cliop_.clientid, MsgPersistedCliOp{view_, cliop_.cliopid});
+      }
     }
 
     if (msgpr.op > commit_) {
@@ -294,6 +314,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
       cout << replica_ << ":" << view_ << "<-" << from << " (SVResp) committing op:" << op_
            << " cliop: " << cliop_.toString() << " sz:" << logs_.size() << endl;
       logs_.push_back(cliop);
+      persisted_ops_.insert(std::make_pair(cliop.second.clientid, cliop.second.cliopid));
       dispatcher_.SendToClient(cliop.second.clientid, MsgPersistedCliOp{view_, cliop.second.cliopid});
     }
     log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
@@ -316,10 +337,13 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
          << presp.op << endl;
     return -1;
   }
-  if (op_ != presp.op) {
-    cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.op:" << presp.op
-        << " does not match with my op:" << op_ << endl;
-    return -3; // old view, unmatching
+  if (op_ != presp.op) { // old view, unmatching
+    if (presp.op != -1) {
+      cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.op:" << presp.op
+           << " does not match with my op:" << op_ << endl;
+      return -3;
+    }
+    return 0;
   }
 
   auto [isdup, idx] = checkDuplicate(trackDups_PrepResps_, from, presp.op);
@@ -348,6 +372,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   logs_.push_back(std::make_pair(op_, cliop_));
   commit_ = op_;
   log_hash_ = mergeLogsHashes(logs_.end() - 1, logs_.end(), log_hash_);
+  persisted_ops_.insert(std::make_pair(cliop_.clientid, cliop_.cliopid));
   dispatcher_.SendToClient(cliop_.clientid, MsgPersistedCliOp{view_, cliop_.cliopid});
 
   return 0;
@@ -393,6 +418,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   for (int i=mlresp.comitted_logs.size(); i-->0; ) {
     logs_.push_back(mlresp.comitted_logs[i]);
     const auto& msg = mlresp.comitted_logs[i].second;
+    persisted_ops_.insert(std::make_pair(msg.clientid, msg.cliopid));
     dispatcher_.SendToClient(msg.clientid, MsgPersistedCliOp{view_, msg.cliopid});
   }
   log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
@@ -406,10 +432,15 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
-MsgOpPersistedResponse
-ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(int from, const MsgOpPersistedQuery& opq)
+std::optional<MsgPersistedCliOp>
+ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
+  int from, const MsgOpPersistedQuery& opq)
 {
-  MsgOpPersistedResponse ret{"", opq.perscliop, false};
+  std::optional<MsgPersistedCliOp> ret;
+  if (opq.perscliop.view == view_ &&
+      persisted_ops_.count(std::make_pair(unsigned(from), opq.perscliop.cliopid))) {
+    ret = MsgPersistedCliOp{view_, opq.perscliop.cliopid};
+  }
   return ret;
 }
 

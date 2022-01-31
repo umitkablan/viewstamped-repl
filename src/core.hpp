@@ -2,9 +2,13 @@
 #define VSREPL_CORE_INCLUDED_ 1
 
 #include "msgs.hpp"
+#include "util.hpp"
 
 #include <chrono>
+#include <functional>
+#include <optional>
 #include <thread>
+#include <unordered_set>
 #include <variant>
 
 namespace vsrepl {
@@ -23,7 +27,7 @@ public:
   void Start();
   void Stop();
 
-  std::variant<std::monostate, MsgLeaderRedirect, int>
+  std::variant<MsgLeaderRedirect, MsgPersistedCliOp, int>
     ConsumeMsg(const MsgClientOp&);
   int ConsumeMsg(int from, const MsgStartViewChange&);
   int ConsumeMsg(int from, const MsgDoViewChange&);
@@ -31,7 +35,7 @@ public:
   MsgPrepareResponse ConsumeMsg(int from, const MsgPrepare&);
   MsgMissingLogsResponse
     ConsumeMsg(int from, const MsgGetMissingLogs&);
-  MsgOpPersistedResponse
+  std::optional<MsgPersistedCliOp>
     ConsumeMsg(int from, const MsgOpPersistedQuery&);
 
   int ConsumeReply(int from, const MsgPrepareResponse&);
@@ -61,6 +65,7 @@ private:
   int commit_;
   std::size_t log_hash_;
   std::vector<std::pair<int, MsgClientOp>> logs_;
+  std::unordered_set<std::pair<unsigned, uint64_t>, PairHasher> persisted_ops_;
   MsgClientOp cliop_;
 
   bool prepare_sent_;

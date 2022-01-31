@@ -101,6 +101,7 @@ public:
     MissingLogsResponse,
     OpPersistedQuery,
     PersistedCliOp,
+    LeaderRedirResponse,
   };
 
   FakeTMsgBuggyNetwork(int cliMinIdx,
@@ -108,6 +109,7 @@ public:
     : random_chose_border_((RAND_MAX / 3) * 2)
     , clientMinIndex_(cliMinIdx)
     , is_shuffle_(shuffle)
+    , active_thread_cnt_(0)
     , decide_(decFun)
     , break_thread_(false)
   {
@@ -126,10 +128,14 @@ public:
     th_ = std::thread([this]() { threadTask(); });
     for (auto& e : engines_)
       e->Start();
+    for (auto& c : clients_)
+      c->Start();
   }
 
   void CleanEnginesStop()
   {
+    for (auto& c : clients_)
+      c->Stop();
     for (auto& e : engines_)
       e->Stop();
 
@@ -153,11 +159,29 @@ public:
   {
     enqueueTask(pts_, [from, to, cliop, this]() {
       auto ret = callDecideSync(from, to, TstMsgType::ClientOp, -1);
+      std::variant<MsgLeaderRedirect, MsgPersistedCliOp, int> v = 0;
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
-        const auto v = engines_[to]->ConsumeMsg(cliop);
+        v = engines_[to]->ConsumeMsg(cliop);
         if (std::holds_alternative<int>(v)) ret = std::get<int>(v);
         else ret = -551;
+      }
+      if (from < clientMinIndex_) return ret;
+
+      if (std::holds_alternative<MsgPersistedCliOp>(v)) {
+        const auto& pco = std::get<MsgPersistedCliOp>(v);
+        ret = callDecideSync(to, from, TstMsgType::PersistedCliOp, pco.view);
+        if (!ret) {
+          // std::lock_guard<std::mutex> lck(clients_mtxs_[fr]);
+          clients_[from - clientMinIndex_]->ConsumeReply(to, pco);
+        }
+      } else if (std::holds_alternative<MsgLeaderRedirect>(v)) {
+        const auto& lr = std::get<MsgLeaderRedirect>(v);
+        ret = callDecideSync(to, from, TstMsgType::LeaderRedirResponse, lr.view);
+        if (!ret) {
+          // std::lock_guard<std::mutex> lck(clients_mtxs_[fr]);
+          clients_[from - clientMinIndex_]->ConsumeReply(to, lr);
+        }
       }
       return ret;
     });
@@ -249,16 +273,18 @@ public:
   {
     enqueueTask(pts_, [from, to, opq, this]() {
       auto ret = callDecideSync(from, to, TstMsgType::OpPersistedQuery, opq.perscliop.view);
-      MsgOpPersistedResponse opqresp {};
+      std::optional<MsgPersistedCliOp> opqresp;
       if (!ret) {
         std::lock_guard<std::mutex> lck(engines_mtxs_[to]);
         opqresp = engines_[to]->ConsumeMsg(from, opq);
       } else return ret;
 
-      ret = callDecideSync(to, from, TstMsgType::OpPersistedQuery, opq.perscliop.view);
-      if (!ret) {
-        // std::lock_guard<std::mutex> lck(clients_mtxs_[from]);
-        return clients_[from - clientMinIndex_]->ConsumeReply(to, opqresp);
+      if (opqresp.has_value()) {
+        ret = callDecideSync(to, from, TstMsgType::OpPersistedQuery, opq.perscliop.view);
+        if (!ret) {
+          // std::lock_guard<std::mutex> lck(clients_mtxs_[from]);
+          clients_[from - clientMinIndex_]->ConsumeReply(to, *opqresp);
+        }
       }
       return ret;
     });
@@ -280,6 +306,7 @@ private:
   int random_chose_border_;
   int clientMinIndex_;
   bool is_shuffle_;
+  std::atomic_int active_thread_cnt_;
   std::vector<ViewStampedReplEngine*> engines_;
   std::vector<VSReplCli*> clients_;
   std::vector<std::mutex> engines_mtxs_;
@@ -338,18 +365,25 @@ private:
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       auto [found, pt] = popLastOf(pts_);
       if (found) {
-        std::thread([p = std::move(pt)]() mutable { p(); }).detach();
+        ++active_thread_cnt_;
+        std::thread([this, p = std::move(pt)]() mutable {
+          p();
+          --active_thread_cnt_;
+        }).detach();
       }
     }
   }
 
   int finishEnqueuedTasks()
   {
-    while(true) {
+    while (true) {
       auto [found, pt] = popLastOf(pts_);
       if (!found) break;
-      std::thread([p = std::move(pt)]() mutable { p(); }).join();
+      pt();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
+    while (active_thread_cnt_ > 0)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
     return pts_.size();
   }
 };

@@ -627,10 +627,10 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps[2].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655", 90 });
   ASSERT_EQ(1, vsreps[2].OpID());
   ASSERT_EQ(0, vsreps[2].CommitID());
-  for (int i = 0; i < 21; ++i) {
+  for (int i = 0; i < 41; ++i) {
     if (1 == vsreps[2].CommitID())
       break;
-    ASSERT_LT(i, 20);
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
   {

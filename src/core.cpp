@@ -68,7 +68,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 
   if (cnt > totreplicas_ / 2) { // include self...
     if (view_ < msgsvc.view) {
-      cout << replica_ << ":" << view_ << "<-" << from << " (SVC) [consensus:" << cnt << "] v:"
+      cout << replica_ << ":" << view_ << "<-" << from << " (SVC) consensus[" << cnt << "] v:"
            << msgsvc.view << endl;
       status_ = Status::Change;
       view_ = msgsvc.view;
@@ -291,7 +291,6 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
        << svresp.missing_entries.size() << endl;
   if (cnt < totreplicas_ / 2) // is consensus not achieved?
     return 0;
-  status_ = Status::Normal;
 
   auto maxcommit = -2, maxidx = -1;
   for (int i = 0; i < totreplicas_; ++i) {
@@ -320,6 +319,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     }
     log_hash_ = mergeLogsHashes(logs_.begin() + cursz, logs_.end(), log_hash_);
   }
+  status_ = Status::Normal;
 
   return 0;
 }
@@ -340,10 +340,10 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   if (op_ != presp.op) { // old view, unmatching
     if (presp.op != -1) {
       cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.op:" << presp.op
-          << " does not match with my op:" << op_ << endl;
-      return 0;
+           << " does not match with my op:" << op_ << endl;
+      return -3;
     }
-    return -3;
+    return 0;
   }
 
   auto [isdup, idx] = checkDuplicate(trackDups_PrepResps_, from, presp.op);

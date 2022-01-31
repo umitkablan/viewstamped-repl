@@ -86,8 +86,8 @@ int VSReplCli<TMsgDispatcher>::DeleteOpID(unsigned opID)
 template <typename TMsgDispatcher>
 void VSReplCli<TMsgDispatcher>::ConsumeCliMsg(int from, const MsgPersistedCliOp& msgperscliop)
 {
-  cout << last_view_ << ":" << client_id_ << " [MsgPersistedCliOp] view:" << msgperscliop.view
-       << " cliopid:" << msgperscliop.cliopid << endl;
+  cout << last_view_ << ":" << client_id_ << "<-" << from << " [MsgPersistedCliOp] view:"
+       << msgperscliop.view << " cliopid:" << msgperscliop.cliopid << endl;
 
   std::lock_guard<std::mutex> lck(opmap_mtx_);
 
@@ -105,8 +105,8 @@ void VSReplCli<TMsgDispatcher>::ConsumeCliMsg(int from, const MsgPersistedCliOp&
 template <typename TMsgDispatcher>
 void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgLeaderRedirect& msgleaderredir)
 {
-  cout << last_view_ << ":" << client_id_ << " [MsgLeaderRedirect] view:" << msgleaderredir.view
-    << " leader:" << msgleaderredir.leader << endl;
+  cout << last_view_ << ":" << client_id_ << "<-" << from << " [MsgLeaderRedirect] view:"
+       << msgleaderredir.view << " leader:" << msgleaderredir.leader << endl;
 
   std::lock_guard<std::mutex> lck(opmap_mtx_);
 

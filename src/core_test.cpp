@@ -652,8 +652,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 
   { // assert that replica:1 could also commit
     for (int i = 0; i < 21; ++i) {
-      if (vsreps[1].OpID() == vsreps[1].CommitID())
-        break;
+      if (vsreps[1].CommitID() == 1) break;
       ASSERT_LT(i, 20);
       sleep_for(std::chrono::milliseconds(50));
     }

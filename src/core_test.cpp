@@ -546,14 +546,14 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 
 
   buggynw.SendMsg(-1, 0, MsgClientOp{ clientMinIdx, "x=12", 86 });
-  for (int i = 0; i < 151; ++i) {
+  for (int i = 0; i < 41; ++i) {
     if (vsreps[0].CommitID() == 0
         // TODO: Normally we need only wait replica:0 CommitID but it has sporadic for now
         && vsreps[1].CommitID() == 0 && vsreps[2].CommitID() == 0
         && vsreps[3].CommitID() == 0 && vsreps[4].CommitID() == 0)
       break;
-    ASSERT_LT(i, 150);
-    sleep_for(std::chrono::milliseconds(5));
+    ASSERT_LT(i, 40);
+    sleep_for(std::chrono::milliseconds(50));
   }
   {
     int cnt = 0;
@@ -628,8 +628,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(1, vsreps[2].OpID());
   ASSERT_EQ(0, vsreps[2].CommitID());
   for (int i = 0; i < 41; ++i) {
-    if (1 == vsreps[2].CommitID())
-      break;
+    if (1 == vsreps[2].CommitID()) break;
     ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
@@ -651,9 +650,9 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_THAT(cnt, ::testing::Gt(3));
 
   { // assert that replica:1 could also commit
-    for (int i = 0; i < 21; ++i) {
+    for (int i = 0; i < 41; ++i) {
       if (vsreps[1].CommitID() == 1) break;
-      ASSERT_LT(i, 20);
+      ASSERT_LT(i, 40);
       sleep_for(std::chrono::milliseconds(50));
     }
     ASSERT_EQ(vsreps[1].OpID(), 1);
@@ -700,10 +699,9 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
     ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=12", 86 }), logs[0]);
     ASSERT_EQ(std::make_pair(1, MsgClientOp{ clientMinIdx, "x=to2_isolated1_v2-6655", 90 }), logs.back());
   }
-  for (int i = 0; i < 21; ++i) {
-    if (vsreps[1].CommitID() > 0)
-      break;
-    ASSERT_LT(i, 20);
+  for (int i = 0; i < 41; ++i) {
+    if (vsreps[1].CommitID() > 0) break;
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
   {
@@ -762,10 +760,10 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
 
   vsreps[4].ConsumeMsg(MsgClientOp{ clientMinIdx, "xt=to4_isolated40_v4to6-002", 91 });
   vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "xu=75", 92 });
-  for (int i = 0; i < 21; ++i) {
+  for (int i = 0; i < 41; ++i) {
     if (vsreps[1].CommitID() > 1) //vsreps[1].OpID() == vsreps[1].CommitID()
       break;
-    ASSERT_LT(i, 20);
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
   {
@@ -795,12 +793,11 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(6, vsreps[4].View());
   ASSERT_EQ(Status::Normal, vsreps[4].GetStatus());
   // Check new ops committed correctly
-  for (int i = 0; i < 21; ++i) {
+  for (int i = 0; i < 41; ++i) {
     // Checking OpID instead of CommitID would have sporadic behavior where the log could be
     //   discarded when it is not *yet _committed_ to the majority* - better be consistent
-    if (vsreps[0].CommitID() == 3 && vsreps[4].CommitID() == 3)
-      break;
-    ASSERT_LT(i, 20);
+    if (vsreps[0].CommitID() == 3 && vsreps[4].CommitID() == 3) break;
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
 
@@ -845,10 +842,9 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to1_separated12_v6to8", 94 });
   ASSERT_EQ(4, vsreps[1].OpID());
   ASSERT_EQ(3, vsreps[1].CommitID());
-  for (int i = 0; i < 21; ++i) {
-    if (vsreps[2].OpID() == 4)
-      break;
-    ASSERT_LT(i, 20);
+  for (int i = 0; i < 41; ++i) {
+    if (vsreps[2].OpID() == 4) break;
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
   ASSERT_EQ(3, vsreps[2].CommitID());
@@ -857,10 +853,9 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps[3].ConsumeMsg(MsgClientOp{ clientMinIdx, "y=to3_isolated12_v8-1563", 96 });
   ASSERT_EQ(4, vsreps[3].OpID());
   ASSERT_EQ(3, vsreps[3].CommitID());
-  for (int i = 0; i < 21; ++i) {
-    if (vsreps[3].OpID() == vsreps[3].CommitID())
-      break;
-    ASSERT_LT(i, 20);
+  for (int i = 0; i < 41; ++i) {
+    if (4 == vsreps[3].CommitID()) break;
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
   ASSERT_EQ(4, vsreps[3].OpID());
@@ -885,12 +880,12 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(Status::Normal, vsreps[2].GetStatus());
 
   // Check that re-joined island gets ops successfully
-  for (int i = 0; i < 21; ++i) {
+  for (int i = 0; i < 41; ++i) {
     if (vsreps[0].OpID() == 4 && vsreps[0].CommitID() == 4
         && vsreps[1].OpID() == 4 && vsreps[1].CommitID() == 4
         && vsreps[2].OpID() == 4 && vsreps[2].CommitID() == 4)
       break;
-    ASSERT_LT(i, 20);
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
 

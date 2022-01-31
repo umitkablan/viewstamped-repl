@@ -1027,21 +1027,19 @@ TEST(VsReplClientInBuggyNetwork, Client_Scenarios)
       return 0;
     }, false);
   std::vector<ParentMsgDispatcher> disps {
-    {0, &buggynet}, {1, &buggynet}, {2, &buggynet}, {3, &buggynet}, {4, &buggynet}, {5, &buggynet}, {6, &buggynet},
+    {0, &buggynet}, {1, &buggynet}, {2, &buggynet}, {3, &buggynet}, {4, &buggynet},
     {clientMinIdx, &buggynet}, {clientMinIdx+1, &buggynet},
   };
-  std::vector<MockStateMachine> sms(7);
+  std::vector<MockStateMachine> sms(5);
   std::vector<vsreTyp> vsreps;
   vsreps.reserve(7); // we need explicit push_back due to copy constructor absence
-  vsreps.push_back({7, 0, disps[0], sms[0]});
-  vsreps.push_back({7, 1, disps[1], sms[1]});
-  vsreps.push_back({7, 2, disps[2], sms[2]});
-  vsreps.push_back({7, 3, disps[3], sms[3]});
-  vsreps.push_back({7, 4, disps[4], sms[4]});
-  vsreps.push_back({7, 5, disps[5], sms[5]});
-  vsreps.push_back({7, 6, disps[6], sms[6]});
-  auto vsc0 = std::make_unique<vsrCliTyp>(clientMinIdx,   disps[7], int(vsreps.size()));
-  auto vsc1 = std::make_unique<vsrCliTyp>(clientMinIdx+1, disps[8], int(vsreps.size()));
+  vsreps.push_back({5, 0, disps[0], sms[0]});
+  vsreps.push_back({5, 1, disps[1], sms[1]});
+  vsreps.push_back({5, 2, disps[2], sms[2]});
+  vsreps.push_back({5, 3, disps[3], sms[3]});
+  vsreps.push_back({5, 4, disps[4], sms[4]});
+  auto vsc0 = std::make_unique<vsrCliTyp>(clientMinIdx,   disps[5], int(vsreps.size()));
+  auto vsc1 = std::make_unique<vsrCliTyp>(clientMinIdx+1, disps[6], int(vsreps.size()));
   buggynet.SetEnginesStart(
     std::vector<vsreTyp*>{
       &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4], &vsreps[5], &vsreps[6] },

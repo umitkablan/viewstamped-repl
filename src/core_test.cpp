@@ -628,7 +628,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   ASSERT_EQ(1, vsreps[2].OpID());
   ASSERT_EQ(0, vsreps[2].CommitID());
   for (int i = 0; i < 21; ++i) {
-    if (vsreps[2].OpID() == vsreps[2].CommitID())
+    if (1 == vsreps[2].CommitID())
       break;
     ASSERT_LT(i, 20);
     sleep_for(std::chrono::milliseconds(50));

@@ -523,7 +523,7 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   FakeTMsgBuggyNetwork<VSREtype, vsrCliTyp> buggynw(clientMinIdx,
     [](int from, int to, testMessageTyp, int vw) {
       return 0;
-    }, false);
+    }, true);
   std::vector<ParentMsgDispatcher> nwdispatchers {
     { 0, &buggynw }, { 1, &buggynw }, { 2, &buggynw }, { 3, &buggynw }, { 4, &buggynw },
     { clientMinIdx, &buggynw },

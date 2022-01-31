@@ -134,7 +134,7 @@ TEST(VsReplClientInBuggyNetwork, Client_Scenarios)
   FakeTMsgBuggyNetwork<vsreTyp, vsrCliTyp> buggynet(clientMinIdx,
     [](int from, int to, testMessageTyp, int view) {
       return 0;
-    }, false);
+    }, true);
   std::vector<ParentMsgDispatcher> disps {
     {0, &buggynet}, {1, &buggynet}, {2, &buggynet}, {3, &buggynet}, {4, &buggynet},
     {clientMinIdx, &buggynet}, {clientMinIdx+1, &buggynet},

@@ -110,7 +110,7 @@ void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgLeaderRedirect& 
 
   std::lock_guard<std::mutex> lck(opmap_mtx_);
 
-  if (!setView(msgleaderredir.view))
+  if (msgleaderredir.view == last_view_ || !setView(msgleaderredir.view))
     return;
   for (auto& p : opmap_) {
     p.second.lastrep = -1;

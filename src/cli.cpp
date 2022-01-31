@@ -26,7 +26,7 @@ template <typename TMsgDispatcher>
 void VSReplCli<TMsgDispatcher>::Start()
 {
   if (timeTickThread_.joinable())
-    throw std::invalid_argument("core engine thread is running");
+    throw std::invalid_argument("client time tick thread is running");
   continue_timetick_ = true;
   timeTickThread_ = std::thread([this]() { timeTickThread(); });
 }
@@ -37,12 +37,15 @@ void VSReplCli<TMsgDispatcher>::Stop()
   continue_timetick_ = false;
   if (timeTickThread_.joinable())
     timeTickThread_.join();
+  cout << "client:" << client_id_ << " time tick thread exited.." << endl;
 }
 
 template <typename TMsgDispatcher>
 unsigned
 VSReplCli<TMsgDispatcher>::InitOp(const std::string& opstr)
 {
+  std::lock_guard<std::mutex> lck(opmap_mtx_);
+
   auto ret = last_op_id_++;
   opmap_.insert(std::make_pair(ret, opStruct{ opstr, OpState::DoesntExist, 0,
         last_view_ % totreplicas_ }));
@@ -53,6 +56,8 @@ template <typename TMsgDispatcher>
 typename VSReplCli<TMsgDispatcher>::OpState
 VSReplCli<TMsgDispatcher>::StartOp(unsigned opID)
 {
+  std::lock_guard<std::mutex> lck(opmap_mtx_);
+
   const auto it = opmap_.find(opID);
   if (it == opmap_.end())
     return OpState::DoesntExist;
@@ -67,6 +72,8 @@ VSReplCli<TMsgDispatcher>::StartOp(unsigned opID)
 template <typename TMsgDispatcher>
 int VSReplCli<TMsgDispatcher>::DeleteOpID(unsigned opID)
 {
+  std::lock_guard<std::mutex> lck(opmap_mtx_);
+
   const auto it = opmap_.find(opID);
   if (it == opmap_.end()) 
     return -1;
@@ -81,8 +88,12 @@ void VSReplCli<TMsgDispatcher>::ConsumeCliMsg(int from, const MsgPersistedCliOp&
 {
   cout << last_view_ << ":" << client_id_ << " [MsgPersistedCliOp] view:" << msgperscliop.view
        << " cliopid:" << msgperscliop.cliopid << endl;
+
+  std::lock_guard<std::mutex> lck(opmap_mtx_);
+
   if (!setView(msgperscliop.view))
     return;
+
   const auto it = opmap_.find(msgperscliop.cliopid);
   if (it == opmap_.end())
     return;
@@ -96,6 +107,9 @@ void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgLeaderRedirect& 
 {
   cout << last_view_ << ":" << client_id_ << " [MsgLeaderRedirect] view:" << msgleaderredir.view
     << " leader:" << msgleaderredir.leader << endl;
+
+  std::lock_guard<std::mutex> lck(opmap_mtx_);
+
   if (!setView(msgleaderredir.view))
     return;
   for (auto& p : opmap_) {
@@ -108,6 +122,8 @@ void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgLeaderRedirect& 
 template <typename TMsgDispatcher>
 void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgPersistedCliOp& perscliop)
 {
+  std::lock_guard<std::mutex> lck(opmap_mtx_);
+
   if (!setView(perscliop.view))
     return;
 
@@ -124,6 +140,8 @@ void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgPersistedCliOp& 
 template <typename TMsgDispatcher>
 void VSReplCli<TMsgDispatcher>::TimeTick()
 {
+  std::lock_guard<std::mutex> lck(opmap_mtx_);
+
   for (auto& p : opmap_) {
     p.second.tick_cnt += 1;
     if (p.second.tick_cnt >= timeout_tick_) {

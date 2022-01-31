@@ -534,12 +534,11 @@ TEST(CoreWithBuggyNetwork, ViewChange_BuggyNetworkNoShuffle_Scenarios)
   vsreps.push_back({ 5, 2, nwdispatchers[2], statemachines[2] });
   vsreps.push_back({ 5, 3, nwdispatchers[3], statemachines[3] });
   vsreps.push_back({ 5, 4, nwdispatchers[4], statemachines[4] });
-  std::vector<vsrCliTyp> vsclients;
-  vsclients.reserve(2);
-  vsclients.push_back( { clientMinIdx, nwdispatchers[5], int(vsreps.size()) });
+
+  auto vsc0 = std::make_unique<vsrCliTyp>(clientMinIdx, nwdispatchers[5], int(vsreps.size()));
   buggynw.SetEnginesStart(std::vector<VSREtype*> {
     &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4] },
-    std::vector<vsrCliTyp*> { &vsclients[0] });
+    std::vector<vsrCliTyp*> { vsc0.get() });
   std::shared_ptr<void> buggynwDel(nullptr,
     [&buggynw](void*) { buggynw.CleanEnginesStop(); });
 
@@ -1041,31 +1040,28 @@ TEST(VsReplClientInBuggyNetwork, Client_Scenarios)
   vsreps.push_back({7, 4, disps[4], sms[4]});
   vsreps.push_back({7, 5, disps[5], sms[5]});
   vsreps.push_back({7, 6, disps[6], sms[6]});
-  std::vector<vsrCliTyp> vsclients;
-  vsclients.reserve(2);
-  vsclients.push_back( { clientMinIdx,   disps[7], int(vsreps.size()) });
-  vsclients.push_back( { clientMinIdx+1, disps[8], int(vsreps.size()) });
+  auto vsc0 = std::make_unique<vsrCliTyp>(clientMinIdx,   disps[7], int(vsreps.size()));
+  auto vsc1 = std::make_unique<vsrCliTyp>(clientMinIdx+1, disps[8], int(vsreps.size()));
   buggynet.SetEnginesStart(
     std::vector<vsreTyp*>{
       &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4], &vsreps[5], &vsreps[6] },
-    std::vector<vsrCliTyp*>{
-      &vsclients[0], &vsclients[1] });
+    std::vector<vsrCliTyp*>{ vsc0.get(), vsc1.get() });
   std::shared_ptr<void> buggynwDel(nullptr,
     [&buggynet](void*) { buggynet.CleanEnginesStop(); });
 
   // --------------------------------------------------------------
   // default case, initial state: consume op using client
   // --------------------------------------------------------------
-  const auto opid0 = vsclients[1].InitOp("cli1=opid0");
-  auto st = vsclients[1].StartOp(opid0);
+  const auto opid0 = vsc1->InitOp("cli1=opid0");
+  auto st = vsc1->StartOp(opid0);
   ASSERT_EQ(cliOpStatusTyp::JustStarted, st);
   for (int i=0; i<21; ++i) {
     ASSERT_NE(20, i);
-    st = vsclients[1].StartOp(opid0);
+    st = vsc1->StartOp(opid0);
     if (st == cliOpStatusTyp::Consumed) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
-  auto res = vsclients[1].DeleteOpID(opid0);
+  auto res = vsc1->DeleteOpID(opid0);
   ASSERT_EQ(0, res);
 
   // --------------------------------------------------------------
@@ -1078,16 +1074,16 @@ TEST(VsReplClientInBuggyNetwork, Client_Scenarios)
       return from==0 || to==0;
     });
   {
-    const auto opid1 = vsclients[0].InitOp("cli0=opid1");
-    st = vsclients[0].StartOp(opid1);
+    const auto opid1 = vsc0->InitOp("cli0=opid1");
+    st = vsc0->StartOp(opid1);
     ASSERT_EQ(cliOpStatusTyp::JustStarted, st);
-    for (int i = 0; i < 21; ++i) {
-      if (vsclients[0].StartOp(opid1) == vsrCliTyp::OpState::Consumed)
+    for (int i = 0; i < 41; ++i) {
+      if (vsc0->StartOp(opid1) == vsrCliTyp::OpState::Consumed)
         break;
-      ASSERT_LT(i, 20);
+      ASSERT_LT(i, 40);
       sleep_for(std::chrono::milliseconds(100));
     }
-    const auto res = vsclients[0].DeleteOpID(opid1);
+    const auto res = vsc0->DeleteOpID(opid1);
     ASSERT_EQ(0, res);
   }
 }

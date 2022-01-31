@@ -4,6 +4,7 @@
 #include "msgs.hpp"
 
 #include <chrono>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -61,6 +62,7 @@ private:
   int last_view_;
   unsigned last_op_id_;
   std::unordered_map<unsigned, opStruct> opmap_;
+  std::mutex opmap_mtx_;
 
   private:
     void timeTickThread();

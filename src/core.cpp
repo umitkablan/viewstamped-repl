@@ -67,11 +67,17 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     1);
 
   if (cnt > totreplicas_ / 2) { // include self...
-    status_ = Status::Change;
-    view_ = msgsvc.view;
-    op_ = commit_;
-    healthcheck_tick_ = latest_healthtick_received_;
-    dispatcher_.SendMsg(msgsvc.view % totreplicas_, MsgDoViewChange { msgsvc.view });
+    if (view_ < msgsvc.view) {
+      cout << replica_ << ":" << view_ << "<-" << from << " (SVC) [consensus:" << cnt << "] v:"
+           << msgsvc.view << endl;
+      status_ = Status::Change;
+      view_ = msgsvc.view;
+      op_ = commit_;
+    }
+    if (view_ == msgsvc.view) {
+      healthcheck_tick_ = latest_healthtick_received_;
+      dispatcher_.SendMsg(msgsvc.view % totreplicas_, MsgDoViewChange { msgsvc.view });
+    }
   } else if (msgsvc.view == view_ + 1
       && healthcheck_tick_ > latest_healthtick_received_
       && healthcheck_tick_ - latest_healthtick_received_ < 3) {
@@ -103,7 +109,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   cout << replica_ << ":" << view_ << "<-" << from << " (DoVC) consensus[" << cnt << "] for v:" << dvc.view << endl;
   view_ = dvc.view;
   op_ = commit_;
-  // status_ = Status::Normal;
+  status_ = Status::Change;
 
   healthcheck_tick_ = latest_healthtick_received_;
   for (int i = 0; i < totreplicas_; ++i) {
@@ -331,10 +337,13 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
          << presp.op << endl;
     return -1;
   }
-  if (op_ != presp.op) {
-    cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.op:" << presp.op
-        << " does not match with my op:" << op_ << endl;
-    return -3; // old view, unmatching
+  if (op_ != presp.op) { // old view, unmatching
+    if (presp.op != -1) {
+      cout << replica_ << ":" << view_ << "<-" << from << " (PrepResp) msg.op:" << presp.op
+          << " does not match with my op:" << op_ << endl;
+      return 0;
+    }
+    return -3;
   }
 
   auto [isdup, idx] = checkDuplicate(trackDups_PrepResps_, from, presp.op);

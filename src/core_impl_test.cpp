@@ -332,7 +332,6 @@ private:
     typename PtCont::value_type pt(std::move(f));
     auto fut = pt.get_future();
     {
-      ++active_thread_cnt_;
       std::lock_guard<std::mutex> lck(packs_mtx_);
 
       if (c.empty())
@@ -366,6 +365,7 @@ private:
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       auto [found, pt] = popLastOf(pts_);
       if (found) {
+        ++active_thread_cnt_;
         std::thread([this, p = std::move(pt)]() mutable {
           p();
           --active_thread_cnt_;
@@ -376,14 +376,14 @@ private:
 
   int finishEnqueuedTasks()
   {
-    while (active_thread_cnt_ > 0) {
+    while (true) {
       auto [found, pt] = popLastOf(pts_);
-      if (found) {
-        pt();
-        --active_thread_cnt_;
-      }
+      if (!found) break;
+      pt();
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
+    while (active_thread_cnt_ > 0)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
     return pts_.size();
   }
 };

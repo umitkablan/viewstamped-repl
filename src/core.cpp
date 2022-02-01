@@ -107,6 +107,9 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
   }
 
   cout << replica_ << ":" << view_ << "<-" << from << " (DoVC) consensus[" << cnt << "] for v:" << dvc.view << endl;
+  if (status_ == Status::Normal && view_ == dvc.view)
+    return 0;
+
   view_ = dvc.view;
   op_ = commit_;
   status_ = Status::Change;

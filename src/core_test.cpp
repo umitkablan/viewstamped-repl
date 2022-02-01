@@ -597,8 +597,9 @@ TEST(CoreIntegrationWithBuggyNetwork, ViewChangeAndConsume_Misc)
   cout << "*** re-join replica:0" << endl;
   buggynw.SetDecideFun(
       [](int from, int to, testMessageTyp, int vw) { return 0; });
-  for (int i = 0; i < 40; ++i) {
+  for (int i = 0; i < 41; ++i) {
     if (vsreps[0].View() > 0 && vsreps[0].GetStatus() == Status::Normal) break;
+    ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
   ASSERT_EQ(1, vsreps[0].View());

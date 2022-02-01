@@ -130,11 +130,12 @@ TEST(VsReplClientInBuggyNetwork, Client_Scenarios)
   using testMessageTyp = FakeTMsgBuggyNetwork<vsreTyp, vsrCliTyp>::TstMsgType;
   using cliOpStatusTyp = typename vsrCliTyp::OpState;
   const int clientMinIdx = 57;
+  const auto shuffle_packets = true;
 
   FakeTMsgBuggyNetwork<vsreTyp, vsrCliTyp> buggynet(clientMinIdx,
     [](int from, int to, testMessageTyp, int view) {
       return 0;
-    }, true);
+    }, shuffle_packets);
   std::vector<ParentMsgDispatcher> disps {
     {0, &buggynet}, {1, &buggynet}, {2, &buggynet}, {3, &buggynet}, {4, &buggynet},
     {clientMinIdx, &buggynet}, {clientMinIdx+1, &buggynet},

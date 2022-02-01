@@ -626,12 +626,10 @@ TEST(CoreIntegrationWithBuggyNetwork, ViewChangeAndConsume_Misc)
 
   // Even replica:1 will adapt to new view since it can receive messages
   for (int i = 0; i < 41; ++i) {
-    if (Status::Normal == vsreps[1].GetStatus()) break;
+    if (Status::Normal == vsreps[1].GetStatus() && 2 == vsreps[1].View()) break;
     ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));
   }
-  ASSERT_EQ(2, vsreps[1].View());
-
   { // assert that replica:1 could also commit
     for (int i = 0; i < 41; ++i) {
       if (vsreps[1].CommitID() == 1) break;
@@ -825,7 +823,7 @@ TEST(CoreIntegrationWithBuggyNetwork, ViewChangeAndConsume_Misc)
   ASSERT_EQ(Status::Normal, vsreps[2].GetStatus());
 
   // Separated leader should not be able to commit an op without consensus followers
-  ASSERT_EQ(3, vsreps[2].CommitID());
+  ASSERT_EQ(3, vsreps[2].OpID());
   ASSERT_EQ(3, vsreps[2].CommitID());
   vsreps[1].ConsumeMsg(MsgClientOp{ clientMinIdx, "x=to1_separated12_v6to8", 94 });
   ASSERT_EQ(4, vsreps[1].OpID());

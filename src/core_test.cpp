@@ -797,6 +797,13 @@ TEST(CoreIntegrationWithBuggyNetwork, ViewChangeAndConsume_Misc)
       if ((from == 1 && to != 2) || (from == 2 && to != 1)) return 1;
       return (to == 2) || (to == 1);
     });
+  for (int i = 0; i < 10; ++i) { // due to packet reorder, wait big group to initiate change
+    if (vsreps[0].GetStatus() == Status::Change && vsreps[3].GetStatus() == Status::Change
+        && vsreps[4].GetStatus() == Status::Change) break;
+    // don't assert anything here, OK if all is not Status::Change at the same time
+    sleep_for(std::chrono::milliseconds(100));
+  }
+
   for (int i = 0; i < 41; ++i) {
     if (vsreps[3].View() > 6 && vsreps[3].GetStatus() == Status::Normal) break;
     ASSERT_LT(i, 40);

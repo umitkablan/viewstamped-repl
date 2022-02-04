@@ -19,7 +19,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicat
   , totreplicas_(totreplicas)
   , replica_(replica)
   , view_(0)
-  , status_(Status::Normal)
+  , status_(Status::Change)
   , op_(-1)
   , commit_(-1)
   , log_hash_(0)
@@ -458,13 +458,14 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::HealthTimeoutT
       prepare_sent_ = false;
       return;
     }
-    for (int i = 0; i < totreplicas_; ++i) {
-      if (i != replica_) {
-        if (status_ == Status::Normal)
+    if (status_ == Status::Normal) {
+      for (int i = 0; i < totreplicas_; ++i)
+        if (i != replica_)
           dispatcher_.SendMsg(i, MsgPrepare { view_, commit_, op_, log_hash_, cliop_ });
-        else
-          dispatcher_.SendMsg(i, MsgPrepare { view_, -1, -1, 1, MsgClientOp {} });
-      }
+    } else {
+      for (int i = 0; i < totreplicas_; ++i)
+        if (i != replica_)
+          dispatcher_.SendMsg(i, MsgStartView{view_, commit_});
     }
     return;
 

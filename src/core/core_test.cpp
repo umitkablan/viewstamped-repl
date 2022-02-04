@@ -14,6 +14,53 @@ using ::testing::StrictMock;
 
 using VSRETestType = ViewstampedReplicationEngine<MockTMsgDispatcher, MockStateMachine>;
 
+TEST(CoreTest, DefaultLeaderStartup)
+{
+  StrictMock<MockTMsgDispatcher> msgdispatcher;
+  MockStateMachine sm;
+  VSRETestType cr(5, 0, msgdispatcher, sm);
+
+  std::vector<std::pair<int, MsgStartView>> start_view_msgs;
+  EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgStartView&>())).WillRepeatedly([&start_view_msgs](int to, const MsgStartView& sv) {
+    start_view_msgs.push_back(std::make_pair(to, sv));
+  });
+
+  const auto view = 0;
+  ASSERT_EQ(Status::Change, cr.GetStatus());
+
+  {
+    cr.HealthTimeoutTicked();
+    ASSERT_EQ(4, start_view_msgs.size());
+    start_view_msgs.clear();
+  }
+  {
+    cr.HealthTimeoutTicked();
+    ASSERT_EQ(4, start_view_msgs.size());
+    start_view_msgs.clear();
+  }
+
+  cr.ConsumeReply(1, MsgStartViewResponse{view, "", -1});
+  ASSERT_EQ(Status::Change, cr.GetStatus());
+
+  std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs, view](int to, const MsgPersistedCliOp& pco) {
+    ASSERT_EQ(view, pco.view);
+    cli_reqs.push_back(std::make_pair(to, pco));
+  });
+
+  cr.ConsumeReply(2, MsgStartViewResponse{view, "", 1,
+      std::vector<std::pair<int, MsgClientOp>>{
+        {1, MsgClientOp{1, "a", 12}}, {0, MsgClientOp{3, "b", 14}},
+      }
+    });
+  ASSERT_EQ(Status::Normal, cr.GetStatus());
+  ASSERT_EQ(1, cr.CommitID());
+  ASSERT_EQ(2, cli_reqs.size());
+  ASSERT_EQ(3, cli_reqs[0].first);
+  ASSERT_EQ(1, cli_reqs[1].first);
+  cli_reqs.clear();
+}
+
 TEST(CoreTest, BasicDoViewChange)
 {
   StrictMock<MockTMsgDispatcher> msgdispatcher;
@@ -154,12 +201,16 @@ TEST(CoreTest, LeaderSendsPrepare)
 {
   StrictMock<MockTMsgDispatcher> msgdispatcher;
   MockStateMachine sm;
-  VSRETestType cr(5, 0, msgdispatcher, sm); // 0 is leader by default ,at the beginning
+  VSRETestType cr(5, 0, msgdispatcher, sm); // 0 is leader by default, at the beginning
+
+  const auto view = 0;
+  cr.ConsumeReply(1, MsgStartViewResponse{view, "", -1});
+  cr.ConsumeReply(2, MsgStartViewResponse{view, "", -1});
 
   std::vector<int> res;
   EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgPrepare&>())).WillRepeatedly(
-    [&res, &cr](int to, const MsgPrepare& pr) {
-      ASSERT_EQ(0, pr.view);
+    [&res, &cr, view](int to, const MsgPrepare& pr) {
+      ASSERT_EQ(view, pr.view);
       res.push_back(to);
       cr.ConsumeReply(to, MsgPrepareResponse { "", pr.op });
     });
@@ -198,16 +249,20 @@ TEST(CoreTest, LeaderPrepareTimeouts)
   MockStateMachine sm;
   VSRETestType cr(5, 0, msgdispatcher, sm); // 0 is leader by default, at the beginning
 
+  const auto view = 0;
+  cr.ConsumeReply(1, MsgStartViewResponse{view, "", -1});
+  cr.ConsumeReply(2, MsgStartViewResponse{view, "", -1});
+
   std::vector<std::pair<int, MsgPrepare>> recv;
   EXPECT_CALL(msgdispatcher, SendMsg(A<int>(), A<const MsgPrepare&>())).WillRepeatedly(
-    [&recv, &cr](int to, const MsgPrepare& pr) {
-      ASSERT_EQ(0, pr.view);
+    [&recv, &cr, view](int to, const MsgPrepare& pr) {
+      ASSERT_EQ(view, pr.view);
       recv.push_back(std::make_pair(to, pr));
       // don't call PrepareResponse to simulate a fail/isolation
     });
   std::vector<std::pair<int, MsgPersistedCliOp>> cli_reqs;
-  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs](int to, const MsgPersistedCliOp& pco) {
-    ASSERT_EQ(0, pco.view);
+  EXPECT_CALL(msgdispatcher, SendToClient(A<int>(), A<const MsgPersistedCliOp&>())).WillRepeatedly([&cli_reqs, view](int to, const MsgPersistedCliOp& pco) {
+    ASSERT_EQ(view, pco.view);
     cli_reqs.push_back(std::make_pair(to, pco));
   });
 

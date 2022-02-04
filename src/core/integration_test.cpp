@@ -393,9 +393,8 @@ TEST(CoreWithBuggyNetwork, CoreEngine_Scenarios)
 
   // Check that re-joined island gets ops successfully
   for (int i = 0; i < 41; ++i) {
-    if (vsreps[0].OpID() == 4 && vsreps[0].CommitID() == 4
-        && vsreps[1].OpID() == 4 && vsreps[1].CommitID() == 4
-        && vsreps[2].OpID() == 4 && vsreps[2].CommitID() == 4)
+    if (vsreps[0].CommitID() == 4 && vsreps[1].CommitID() == 4 && vsreps[2].CommitID() == 4
+        && vsreps[3].CommitID() == 4 && vsreps[4].CommitID() == 4)
       break;
     ASSERT_LT(i, 40);
     sleep_for(std::chrono::milliseconds(50));

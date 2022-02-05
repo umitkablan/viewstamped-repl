@@ -80,7 +80,7 @@ struct MsgMissingLogsResponse {
   std::string err;
   std::pair<int, MsgClientOp> op_log;
   std::vector<std::pair<int, MsgClientOp>> comitted_logs;
-  unsigned hashoflast;
+  std::size_t tothash;
 };
 
 struct MsgPersistedCliOp {

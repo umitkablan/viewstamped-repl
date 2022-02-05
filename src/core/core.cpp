@@ -388,7 +388,7 @@ ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
 {
   cout << replica_ << ":" << view_ << "<-" << from << " (GetML) msg.last_commit:"
     << msgml.my_last_commit << endl;
-  MsgMissingLogsResponse ret{view_, "", std::make_pair(op_,cliop_)};
+  MsgMissingLogsResponse ret{view_, "", std::make_pair(op_,cliop_), {}, log_hash_};
   if ((view_ % totreplicas_) != replica_) {
     ret.err = "I am not the leader " + std::to_string(replica_) + ":" + std::to_string(view_);
     return ret;
@@ -418,6 +418,15 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
   }
 
   auto cursz = logs_.size();
+  auto new_hash = log_hash_;
+  for (auto it = mlresp.comitted_logs.rbegin(); it != mlresp.comitted_logs.rend(); ++it)
+    new_hash = mergeLogsHashes(it.base()-1, it.base(), new_hash);
+  if (new_hash != mlresp.tothash){
+    cout << replica_ << ":" << view_ << "<-" << from << " (RespML) our hash doesn't match new_hash:"
+         << new_hash << " msg.tothash:" << mlresp.tothash << endl;
+    return -3;
+  }
+
   for (int i=mlresp.comitted_logs.size(); i-->0; ) {
     logs_.push_back(mlresp.comitted_logs[i]);
     const auto& msg = mlresp.comitted_logs[i].second;

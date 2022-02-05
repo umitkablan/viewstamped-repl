@@ -427,12 +427,18 @@ TEST(CoreTest, MissingLogs)
     ASSERT_EQ(1, missing_log_reqs.size());
     ASSERT_EQ(leader, missing_log_reqs[0].first);
     ASSERT_EQ(4, missing_log_reqs[0].second.my_last_commit);
-    cr1.ConsumeReply(leader, MsgMissingLogsResponse { view, "",
+    auto mlr = MsgMissingLogsResponse { view, "",
         { 7, MsgClientOp{ 1237, "ss=45", 113 } },
         {
           { 6, MsgClientOp{ 1237, "ee=dd", 112 } },
-        }
-      });
+        }, 112233, // wrong hash
+      };
+    cr1.ConsumeReply(leader, mlr);
+    ASSERT_EQ(0, cli_reqs.size());
+    ASSERT_EQ(4, cr1.CommitID());
+    mlr.tothash = mergeLogsHashes(mlr.comitted_logs.begin(), mlr.comitted_logs.end(), cr1.GetHash());
+    cr1.ConsumeReply(leader, mlr);
+    ASSERT_EQ(6, cr1.CommitID());
     ASSERT_EQ(1, cli_reqs.size());
     ASSERT_EQ(112, cli_reqs[0].second.cliopid);
     ASSERT_EQ(1237, cli_reqs[0].first);

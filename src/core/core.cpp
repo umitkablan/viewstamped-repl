@@ -11,7 +11,7 @@ namespace vsrepl {
 
 template <typename TMsgDispatcher, typename TStateMachine>
 ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ViewstampedReplicationEngine(
-  int totreplicas, int replica, TMsgDispatcher& dp, TStateMachine& sm,
+  unsigned totreplicas, unsigned replica, TMsgDispatcher& dp, TStateMachine& sm,
   std::chrono::milliseconds tick_interval)
   : dispatcher_(dp)
   , state_machine_(sm)

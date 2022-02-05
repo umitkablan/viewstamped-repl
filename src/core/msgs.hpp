@@ -31,12 +31,12 @@ struct MsgClientOp {
 };
 
 struct MsgLeaderRedirect {
-    int view;
-    int leader;
+    unsigned view;
+    unsigned leader;
 };
 
 struct MsgPrepare {
-  int view;
+  unsigned view;
   int op;
   int commit;
   std::size_t loghash;
@@ -44,22 +44,22 @@ struct MsgPrepare {
 };
 
 struct MsgStartViewChange {
-  int view;
+  unsigned view;
 };
 
 struct MsgDoViewChange {
-  int view;
+  unsigned view;
 };
 
 // Leader's command to all possible Followers
 struct MsgStartView {
-  int view;
+  unsigned view;
   int last_commit;
 };
 
 // Followers' response to the Leader candidate
 struct MsgStartViewResponse {
-  int view;
+  unsigned view;
   std::string err;
   int last_commit;
   std::vector<std::pair<int, MsgClientOp>> missing_entries;
@@ -71,12 +71,12 @@ struct MsgPrepareResponse {
 };
 
 struct MsgGetMissingLogs {
-  int view;
+  unsigned view;
   int my_last_commit;
 };
 
 struct MsgMissingLogsResponse {
-  int view;
+  unsigned view;
   std::string err;
   std::pair<int, MsgClientOp> op_log;
   std::vector<std::pair<int, MsgClientOp>> comitted_logs;
@@ -84,7 +84,7 @@ struct MsgMissingLogsResponse {
 };
 
 struct MsgPersistedCliOp {
-  int view;
+  unsigned view;
   uint64_t cliopid;
 };
 

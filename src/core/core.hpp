@@ -21,7 +21,7 @@ enum class Status : char {
 template <typename TMsgDispatcher, typename TStateMachine>
 class ViewstampedReplicationEngine {
 public:
-  ViewstampedReplicationEngine(int totreplicas, int replica, TMsgDispatcher& dp, TStateMachine& sm,
+  ViewstampedReplicationEngine(unsigned totreplicas, unsigned replica, TMsgDispatcher& dp, TStateMachine& sm,
     std::chrono::milliseconds tick_interval = std::chrono::milliseconds(150));
 
   void Start();
@@ -57,9 +57,9 @@ private:
   TStateMachine& state_machine_;
   std::chrono::milliseconds tick_interval_;
 
-  const int totreplicas_;
-  const int replica_;
-  int view_;
+  const unsigned totreplicas_;
+  const unsigned replica_;
+  unsigned view_;
   Status status_;
   int op_;
   int commit_;

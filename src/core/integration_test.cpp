@@ -51,7 +51,7 @@ TEST(CoreWithBuggyNetwork, CoreEngine_Scenarios)
   std::shared_ptr<void> buggynwDel(nullptr,
     [&buggynw](void*) { buggynw.CleanEnginesStop(); });
 
-  for (int i = 0; i < 141; ++i) {
+  for (int i = 0; i < 141; ++i) { // first command could take time due to leader's missing logs retrieval
     const auto v = vsreps[0].ConsumeMsg(MsgClientOp{clientMinIdx, "x=init_to0_v0-001", 86});
     if (std::holds_alternative<int>(v) && std::get<int>(v) == 0) break;
     sleep_for(std::chrono::milliseconds(50));

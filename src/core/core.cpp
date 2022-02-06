@@ -103,7 +103,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     return 0;
   }
 
-  log_info("{}:{}<-{} (DoVC) consensus[{}] for v:{}", replica_, view_, from, dvc.view);
+  log_info("{}:{}<-{} (DoVC) consensus[{}] for v:{}", replica_, view_, from, cnt, dvc.view);
   if (status_ == Status::Normal && view_ == dvc.view)
     return 0;
 
@@ -412,7 +412,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     new_hash = mergeLogsHashes(it.base()-1, it.base(), new_hash);
   if (new_hash != mlresp.tothash){
     log_info("{}:{}<-{} (RespML) our hash doesn't match new_hash:{} msg.tothash:{}",
-        replica_, view_, from, new_hash,  mlresp.tothash);
+        replica_, view_, from, new_hash, mlresp.tothash);
     return -3;
   }
 

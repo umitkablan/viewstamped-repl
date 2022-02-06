@@ -3,10 +3,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <iostream>
-using std::cout;
-using std::endl;
-
 namespace vsrepl
 {
 namespace test

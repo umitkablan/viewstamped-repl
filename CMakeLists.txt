@@ -19,6 +19,10 @@ FetchContent_MakeAvailable(googletest)
 include(ExternalProject)
 ExternalProject_Add(SPDLOG
   URL https://github.com/gabime/spdlog/archive/refs/tags/v1.9.2.tar.gz
+  CONFIGURE_COMMAND cmake -E echo "Skipping configure step."
+  BUILD_COMMAND cmake -E echo "Skipping build step."
+  INSTALL_COMMAND cmake -E echo "Skipping install step."
+  # CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/SPDLOG_install
 )
 ExternalProject_Get_Property(SPDLOG source_dir)
 set(spdlog_SRCDIR ${source_dir})

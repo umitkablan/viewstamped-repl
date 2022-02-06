@@ -1,8 +1,6 @@
 #include "cli.hpp"
 
-#include <iostream>
-using std::cout;
-using std::endl;
+#include "util/logger.hpp"
 
 namespace vsrepl
 {
@@ -37,7 +35,7 @@ void VSReplCli<TMsgDispatcher>::Stop()
   continue_timetick_ = false;
   if (timeTickThread_.joinable())
     timeTickThread_.join();
-  cout << "client:" << client_id_ << " time tick thread exited.." << endl;
+  log_info("client:{} time tick thread exited..", client_id_);
 }
 
 template <typename TMsgDispatcher>
@@ -86,8 +84,8 @@ int VSReplCli<TMsgDispatcher>::DeleteOpID(unsigned opID)
 template <typename TMsgDispatcher>
 void VSReplCli<TMsgDispatcher>::ConsumeCliMsg(int from, const MsgPersistedCliOp& msgperscliop)
 {
-  cout << last_view_ << ":" << client_id_ << "<-" << from << " [MsgPersistedCliOp] view:"
-       << msgperscliop.view << " cliopid:" << msgperscliop.cliopid << endl;
+  log_info("{}:{}<-{} [MsgPersistedCliOp] view:{} cliopid:{}", client_id_, last_view_, from,
+      msgperscliop.view, msgperscliop.cliopid);
 
   std::lock_guard<std::mutex> lck(opmap_mtx_);
 
@@ -105,8 +103,8 @@ void VSReplCli<TMsgDispatcher>::ConsumeCliMsg(int from, const MsgPersistedCliOp&
 template <typename TMsgDispatcher>
 void VSReplCli<TMsgDispatcher>::ConsumeReply(int from, const MsgLeaderRedirect& msgleaderredir)
 {
-  cout << last_view_ << ":" << client_id_ << "<-" << from << " [MsgLeaderRedirect] view:"
-       << msgleaderredir.view << " leader:" << msgleaderredir.leader << endl;
+  log_info("{}:{}<-{} [MsgLeaderRedirect] view:{} leader:{}", client_id_, last_view_, from,
+      msgleaderredir.view, msgleaderredir.leader);
 
   std::lock_guard<std::mutex> lck(opmap_mtx_);
 

@@ -16,5 +16,13 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+include(ExternalProject)
+ExternalProject_Add(SPDLOG
+  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.9.2.tar.gz
+)
+ExternalProject_Get_Property(SPDLOG source_dir)
+set(spdlog_SRCDIR ${source_dir})
+
+
 add_subdirectory(src)
 

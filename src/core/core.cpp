@@ -261,12 +261,12 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     int from, const MsgStartViewResponse& svresp)
 {
   if ((view_ % totreplicas_) != replica_) {
-    log_info("{}:{}<-{} (SVCResp) lastcommit:{}; I am not the Leader!", replica_, view_, from,
+    log_info("{}:{}<-{} (SVResp) lastcommit:{}; I am not the Leader!", replica_, view_, from,
         svresp.last_commit);
     return -1;
   }
   if (!svresp.err.empty()) {
-    log_info("{}:{}<-{} (SVCResp) err:{}", replica_, view_, from, svresp.err);
+    log_info("{}:{}<-{} (SVResp) err:{}", replica_, view_, from, svresp.err);
     return -2;
   }
 
@@ -283,7 +283,7 @@ int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeReply(
     trackDups_SVResps_.recv_replicas_.begin()+(idx+1)*totreplicas_,
     1);
 
-  log_info("{}:{}<-{} (SVCResp) consensus[{}] {}/{} lastcommit:{} missing.sz:{}", replica_, view_, from,
+  log_info("{}:{}<-{} (SVResp) consensus[{}] {}/{} lastcommit:{} missing.sz:{}", replica_, view_, from,
       cnt, commit_, op_, svresp.last_commit, svresp.missing_entries.size());
   if (cnt < totreplicas_ / 2) // is consensus not achieved?
     return 0;

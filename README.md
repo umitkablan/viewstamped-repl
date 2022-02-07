@@ -9,5 +9,5 @@ cmake --build build/Debug
 
 # Unit Test
 `
-./build/Debug/src/core_test
+./build/Debug/src/core/core_test
 `

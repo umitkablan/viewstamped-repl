@@ -404,12 +404,6 @@ TEST(CoreWithBuggyNetwork, CoreEngine_Scenarios)
   }
 
   {
-    auto&& logs = vsreps[3].GetCommittedLogs();
-    for (auto& p : logs)
-      cout << "pp: " << p.first << " .. " << p.second.toString() << endl;
-  }
-
-  {
     auto&& logs = vsreps[1].GetCommittedLogs();
     ASSERT_EQ(5, logs.size());
     ASSERT_EQ(std::make_pair(0, MsgClientOp{ clientMinIdx, "x=init_to0_v0-001", 86 }), logs[0]);

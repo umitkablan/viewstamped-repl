@@ -441,6 +441,104 @@ TEST(CoreWithBuggyNetwork, CoreEngine_Scenarios)
   }
 }
 
+TEST(CoreWithBuggyNetwork, CoreEngine_ResetEngines)
+{
+  const int clientMinIdx = 62;
+  const bool shuffle_packets = true;
+
+  fakeNetworkTyp buggynw(clientMinIdx,
+    [](int from, int to, testMsgTyp, int vw) { return 0; }, shuffle_packets);
+  std::vector<ParentMsgDispatcher> nwdispatchers {
+    { 0, &buggynw }, { 1, &buggynw }, { 2, &buggynw }, { 3, &buggynw }, { 4, &buggynw },
+    { clientMinIdx, &buggynw },
+  };
+  std::vector<MockStateMachine> statemachines(5);
+  std::vector<engInFakeNetTyp> vsreps;
+  vsreps.reserve(5); // we need explicit push_back due to copy constructor absence
+  vsreps.push_back({ 5, 0, nwdispatchers[0], statemachines[0] });
+  vsreps.push_back({ 5, 1, nwdispatchers[1], statemachines[1] });
+  vsreps.push_back({ 5, 2, nwdispatchers[2], statemachines[2] });
+  vsreps.push_back({ 5, 3, nwdispatchers[3], statemachines[3] });
+  vsreps.push_back({ 5, 4, nwdispatchers[4], statemachines[4] });
+
+  auto vsc0 = std::make_unique<cliInFakeNetTyp>(clientMinIdx, nwdispatchers[5], int(vsreps.size()));
+  buggynw.SetEnginesStart(std::vector<engInFakeNetTyp*> {
+    &vsreps[0], &vsreps[1], &vsreps[2], &vsreps[3], &vsreps[4] },
+    std::vector<cliInFakeNetTyp*> { vsc0.get() });
+  std::shared_ptr<void> buggynwDel(nullptr,
+    [&buggynw](void*) { buggynw.CleanEnginesStop(); });
+
+  // --------------------------------------------------------------
+  // replica:4 fail and restart
+  // --------------------------------------------------------------
+  cout << "*** replica:4 fail, reset and..." << endl;
+  buggynw.SetDecideFun(
+    [](int from, int to, testMsgTyp, int vw) -> int {
+      if (from == to) return 0;
+      return from==4 || to==4;
+    });
+  vsreps[4].Stop();
+  vsreps[4].ResetContent();
+  sleep_for(std::chrono::milliseconds(1500));
+  vsreps[0].ConsumeMsg(MsgClientOp{clientMinIdx, "x=initial_to0_stopped4_v0", 6});
+  for (int i = 0; i < 41; ++i) {
+    if (vsreps[1].OpID() == 0) break; // just wait one of them other than replica:0 and 4
+    ASSERT_LT(i, 40);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  cout << "*** replica:4 ...restart" << endl;
+  vsreps[4].Start();
+  buggynw.SetDecideFun(
+    [](int from, int to, testMsgTyp, int vw) -> int { return 0; });
+
+  for (int i = 0; i < 41; ++i) {
+    if (vsreps[4].CommitID() == 0) break;
+    ASSERT_LT(i, 40);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  {
+    auto&& logs = vsreps[4].GetCommittedLogs();
+    ASSERT_EQ(1, logs.size());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{clientMinIdx, "x=initial_to0_stopped4_v0", 6}), logs[0]);
+  }
+
+  // --------------------------------------------------------------
+  // replica:1 fail and restart
+  // --------------------------------------------------------------
+  cout << "*** replica:1 fail, reset and..." << endl;
+  buggynw.SetDecideFun(
+    [](int from, int to, testMsgTyp, int vw) -> int {
+      if (from == to) return 0;
+      return from==1 || to==1;
+    });
+  vsreps[1].Stop();
+  vsreps[1].ResetContent();
+  sleep_for(std::chrono::milliseconds(1500));
+  vsreps[0].ConsumeMsg(MsgClientOp{clientMinIdx, "x=to0_stopped1_v0", 7});
+  for (int i = 0; i < 41; ++i) {
+    if (vsreps[2].OpID() == 0) break; // just wait one of them other than replica:0 and 1
+    ASSERT_LT(i, 40);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  cout << "*** replica:1 ...restart" << endl;
+  vsreps[1].Start();
+  buggynw.SetDecideFun(
+    [](int from, int to, testMsgTyp, int vw) -> int { return 0; });
+
+  for (int i = 0; i < 41; ++i) {
+    if (vsreps[1].CommitID() == 1) break;
+    ASSERT_LT(i, 40);
+    sleep_for(std::chrono::milliseconds(50));
+  }
+  {
+    auto&& logs = vsreps[1].GetCommittedLogs();
+    ASSERT_EQ(2, logs.size());
+    ASSERT_EQ(std::make_pair(0, MsgClientOp{clientMinIdx, "x=initial_to0_stopped4_v0", 6}), logs[0]);
+    ASSERT_EQ(std::make_pair(1, MsgClientOp{clientMinIdx, "x=to0_stopped1_v0", 7}), logs[1]);
+  }
+}
+
+
 TEST(ClientInBuggyNetwork, Client_Scenarios)
 {
   const int clientMinIdx = 57;

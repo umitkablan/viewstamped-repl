@@ -51,6 +51,31 @@ void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::Stop()
 }
 
 template <typename TMsgDispatcher, typename TStateMachine>
+void ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ResetContent()
+{
+  view_ = 0;
+  status_ = Status::Change;
+  op_ = -1;
+  commit_ = -1;
+  log_hash_ = 0;
+  logs_.clear();
+  persisted_ops_.clear();
+  //cliop_.Clear();
+  prepare_sent_ = false;
+  latest_healthtick_received_ = 1;
+  healthcheck_tick_ = 1;
+
+  trackDups_SVCs_.Clear();
+  trackDups_DVCs_.Clear();
+  trackDups_PrepResps_.Clear();
+  trackDups_SVResps_.Clear();
+  // for (auto s : svResps_)
+  //   s.Clear();
+  continue_healthtick_ = true;
+}
+
+
+template <typename TMsgDispatcher, typename TStateMachine>
 int ViewstampedReplicationEngine<TMsgDispatcher, TStateMachine>::ConsumeMsg(
     int from, const MsgStartViewChange& msgsvc)
 {

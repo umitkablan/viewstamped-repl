@@ -19,13 +19,15 @@ enum class Status : char {
 };
 
 template <typename TMsgDispatcher, typename TStateMachine>
-class ViewstampedReplicationEngine {
+class ViewstampedReplicationEngine
+{
 public:
   ViewstampedReplicationEngine(unsigned totreplicas, unsigned replica, TMsgDispatcher& dp, TStateMachine& sm,
     std::chrono::milliseconds tick_interval = std::chrono::milliseconds(150));
 
   void Start();
   void Stop();
+  void ResetContent();
 
   std::variant<MsgLeaderRedirect, MsgPersistedCliOp, int>
     ConsumeMsg(const MsgClientOp&);
@@ -82,6 +84,11 @@ private:
     std::vector<int8_t> recv_replicas_;
     std::vector<int> recv_views_;
     int empty_id;
+
+    void Clear() {
+      recv_replicas_.assign(recv_replicas_.size(), 0);
+      recv_views_.assign(recv_views_.size(), empty_id);
+    }
   };
   trackDups trackDups_SVCs_;
   trackDups trackDups_DVCs_;
